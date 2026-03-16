@@ -96,6 +96,9 @@ const NotionAPI = (() => {
   function mapNotionPage(page) {
     const props = page.properties || {};
     const category = props.Category?.select?.name || "";
+    const cover = page.cover;
+    const coverImage =
+      cover?.external?.url || cover?.file?.url || null;
     return {
       id: page.id,
       title: props.Name?.title?.[0]?.plain_text || "Untitled",
@@ -103,6 +106,7 @@ const NotionAPI = (() => {
       category,
       date: props.Date?.date?.start || "",
       readTime: props.ReadTime?.rich_text?.[0]?.plain_text || "",
+      coverImage,
       coverEmoji: page.icon?.emoji || "📝",
       coverGradient: gradientForCategory(category),
       tags: props.Tags?.multi_select?.map((t) => t.name) || [],

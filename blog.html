@@ -190,11 +190,16 @@
 
         const catStyle = categoryColors[post.category] || "rgba(0, 229, 255, 0.1); color: #00e5ff; border-color: rgba(0, 229, 255, 0.2)";
 
+        const coverHtml = post.coverImage
+          ? `<div class="blog-card-cover-placeholder blog-card-cover-img">
+               <img src="${post.coverImage}" alt="${post.title}" loading="lazy" onerror="this.parentElement.classList.remove('blog-card-cover-img');this.remove()">
+             </div>`
+          : `<div class="blog-card-cover-placeholder" style="background: ${post.coverGradient || 'linear-gradient(135deg, #1a1a2e, #16213e)'}">
+               <span>${post.coverEmoji || '📝'}</span>
+             </div>`;
         return `
           <a href="post.html?id=${post.id}" class="blog-card" data-reveal>
-            <div class="blog-card-cover-placeholder" style="background: ${post.coverGradient || 'linear-gradient(135deg, #1a1a2e, #16213e)'}">
-              <span>${post.coverEmoji || '📝'}</span>
-            </div>
+            ${coverHtml}
             <div class="blog-card-body">
               <div class="blog-card-category" style="background: ${catStyle}">${post.category}</div>
               <h3 class="blog-card-title">${post.title}</h3>
