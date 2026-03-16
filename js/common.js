@@ -136,14 +136,12 @@ function animateParticles() {
     for (let j = 0; j < count; j++) {
       const d = bucketArrays[color][j];
       ctx.globalAlpha = d.opacity;
-      ctx.shadowBlur = d.pSize * 2;
       ctx.beginPath();
       ctx.arc(d.px, d.py, d.pSize, 0, Math.PI * 2);
       ctx.fill();
     }
   }
   ctx.globalAlpha = 1;
-  ctx.shadowBlur = 0;
   rafId = requestAnimationFrame(animateParticles);
 }
 
