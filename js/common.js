@@ -219,3 +219,10 @@ function initBlogCardReveal() {
 
 // Expose for use in page scripts
 window.initBlogCardReveal = initBlogCardReveal;
+
+/* ===== 清除文字选区（防止蓝框残留）===== */
+document.addEventListener("mousedown", (e) => {
+  if (!e.target.closest(".post-content")) {
+    window.getSelection()?.removeAllRanges();
+  }
+});
