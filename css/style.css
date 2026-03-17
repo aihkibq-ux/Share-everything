@@ -24,10 +24,6 @@
   box-sizing: border-box;
 }
 
-.glass {
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
 
 body {
   font-family:
@@ -420,16 +416,6 @@ body {
   transform: translateY(0) scale(0.98);
 }
 
-.btn-ghost {
-  background: var(--glass-bg);
-  color: var(--text-primary);
-  border: 1px solid var(--glass-border);
-}
-.btn-ghost:hover {
-  background: var(--glass-bg-hover);
-  border-color: var(--glass-border-hover);
-  transform: translateY(-2px);
-}
 
 .btn-home {
   background: linear-gradient(
@@ -628,11 +614,6 @@ body {
   margin-bottom: 16px;
 }
 
-.page-subtitle {
-  color: var(--text-secondary);
-  font-size: 1.05rem;
-  line-height: 1.7;
-}
 
 /* ===== Blog Filters ===== */
 .blog-filters {
@@ -751,13 +732,6 @@ body {
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
 }
 
-.blog-card-cover {
-  width: 100%;
-  height: 200px;
-  object-fit: cover;
-  display: block;
-  border-bottom: 1px solid var(--glass-border);
-}
 
 .blog-card-cover-placeholder {
   width: 100%;
@@ -964,12 +938,6 @@ body {
   vertical-align: -2px;
 }
 
-.post-cover {
-  width: 100%;
-  border-radius: var(--radius-md);
-  margin-bottom: 48px;
-  border: 1px solid var(--glass-border);
-}
 
 /* ===== Post Content (Notion Blocks) ===== */
 .post-content {
@@ -1122,6 +1090,7 @@ body {
     background-position: 200% 0;
   }
   100% {
+    background-position: -200% 0;
   }
 }
 

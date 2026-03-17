@@ -60,6 +60,8 @@ export default {
   },
 };
 
+// TODO: 生产环境应将 Allow-Origin 改为实际前端域名，而非 "*"
+// TODO: 考虑添加简单的速率控制/缓存，Notion API 限速 3 req/s
 function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",

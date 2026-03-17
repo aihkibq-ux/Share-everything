@@ -265,11 +265,27 @@ const NotionAPI = (() => {
       .replace(/"/g, "&quot;");
   }
 
+  // ====== 分类颜色映射 ======
+  const CATEGORY_COLORS = {
+    "技术": { bg: "rgba(41, 121, 255, 0.1)", color: "#2979ff", border: "rgba(41, 121, 255, 0.2)" },
+    "精选": { bg: "rgba(255, 64, 129, 0.1)", color: "#ff4081", border: "rgba(255, 64, 129, 0.2)" },
+    "随想": { bg: "rgba(213, 0, 249, 0.1)", color: "#d500f9", border: "rgba(213, 0, 249, 0.2)" },
+    "教程": { bg: "rgba(0, 230, 118, 0.1)", color: "#00e676", border: "rgba(0, 230, 118, 0.2)" },
+    "工具": { bg: "rgba(255, 171, 0, 0.1)", color: "#ffab00", border: "rgba(255, 171, 0, 0.2)" },
+  };
+  const DEFAULT_CATEGORY_COLOR = { bg: "rgba(0, 229, 255, 0.1)", color: "#00e5ff", border: "rgba(0, 229, 255, 0.2)" };
+
+  function getCategoryColor(category) {
+    return CATEGORY_COLORS[category] || DEFAULT_CATEGORY_COLOR;
+  }
+
   // ====== 公开 API ======
   return {
     getCategories: () => CATEGORIES,
     queryPosts: (options = {}) => liveQueryDatabase(options),
     getPost: (pageId) => liveGetPage(pageId),
     renderBlocks,
+    escapeHtml,
+    getCategoryColor,
   };
 })();

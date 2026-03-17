@@ -59,8 +59,8 @@
       <!-- Content -->
       <div class="page-container">
         <div class="page-header">
-        <h1 class="page-title">总览</h1>
-      </div>
+          <h1 class="page-title">总览</h1>
+        </div>
 
       <!-- Search -->
       <div class="blog-search">
@@ -217,30 +217,27 @@
       }
 
       function renderCard(post) {
-        const categoryColors = {
-          "技术": "rgba(41, 121, 255, 0.1); color: #2979ff; border-color: rgba(41, 121, 255, 0.2)",
-          "精选": "rgba(255, 64, 129, 0.1); color: #ff4081; border-color: rgba(255, 64, 129, 0.2)",
-          "随想": "rgba(213, 0, 249, 0.1); color: #d500f9; border-color: rgba(213, 0, 249, 0.2)",
-          "教程": "rgba(0, 230, 118, 0.1); color: #00e676; border-color: rgba(0, 230, 118, 0.2)",
-          "工具": "rgba(255, 171, 0, 0.1); color: #ffab00; border-color: rgba(255, 171, 0, 0.2)",
-        };
+        const esc = NotionAPI.escapeHtml;
+        const catColor = NotionAPI.getCategoryColor(post.category);
 
-        const catStyle = categoryColors[post.category] || "rgba(0, 229, 255, 0.1); color: #00e5ff; border-color: rgba(0, 229, 255, 0.2)";
+        const safeTitle = esc(post.title);
+        const safeExcerpt = esc(post.excerpt);
+        const safeCategory = esc(post.category);
 
         const coverHtml = post.coverImage
           ? `<div class="blog-card-cover-placeholder blog-card-cover-img">
-               <img src="${post.coverImage}" alt="${post.title}" loading="lazy" onerror="this.parentElement.classList.remove('blog-card-cover-img');this.remove()">
+               <img src="${esc(post.coverImage)}" alt="${safeTitle}" loading="lazy" onerror="this.parentElement.classList.remove('blog-card-cover-img');this.remove()">
              </div>`
           : `<div class="blog-card-cover-placeholder" style="background: ${post.coverGradient || 'linear-gradient(135deg, #1a1a2e, #16213e)'}">
                <span>${post.coverEmoji || '📝'}</span>
              </div>`;
         return `
-          <a href="post.html?id=${post.id}" class="blog-card" data-reveal>
+          <a href="post.html?id=${encodeURIComponent(post.id)}" class="blog-card" data-reveal>
             ${coverHtml}
             <div class="blog-card-body">
-              <div class="blog-card-category" style="background: ${catStyle}">${post.category}</div>
-              <h3 class="blog-card-title">${post.title}</h3>
-              <p class="blog-card-excerpt">${post.excerpt}</p>
+              <div class="blog-card-category" style="background: ${catColor.bg}; color: ${catColor.color}; border-color: ${catColor.border}">${safeCategory}</div>
+              <h3 class="blog-card-title">${safeTitle}</h3>
+              <p class="blog-card-excerpt">${safeExcerpt}</p>
               <div class="blog-card-meta">
                 <span>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -249,14 +246,14 @@
                     <line x1="8" y1="2" x2="8" y2="6"></line>
                     <line x1="3" y1="10" x2="21" y2="10"></line>
                   </svg>
-                  ${post.date}
+                  ${esc(post.date)}
                 </span>
                 <span>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"></circle>
                     <polyline points="12 6 12 12 16 14"></polyline>
                   </svg>
-                  ${post.readTime}
+                  ${esc(post.readTime)}
                 </span>
               </div>
             </div>
@@ -300,16 +297,16 @@
       /* ===== Reading History (localStorage) ===== */
       function saveHistory() {
         try {
-          const history = JSON.parse(localStorage.getItem("blog_history") || "[]");
+          const entries = JSON.parse(localStorage.getItem("blog_history") || "[]");
           const entry = {
             url: window.location.href,
             category: currentCategory,
             search: currentSearch,
             timestamp: Date.now(),
           };
-          history.unshift(entry);
+          entries.unshift(entry);
           // Keep last 50
-          localStorage.setItem("blog_history", JSON.stringify(history.slice(0, 50)));
+          localStorage.setItem("blog_history", JSON.stringify(entries.slice(0, 50)));
         } catch (e) {
           // localStorage not available
         }
