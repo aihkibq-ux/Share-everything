@@ -46,6 +46,27 @@ body {
   -webkit-user-select: none;
 }
 
+.page-transition-wrapper {
+  animation: pageFadeIn 0.5s var(--transition-smooth) forwards;
+  min-height: 100vh;
+  position: relative;
+  z-index: 10;
+}
+
+.page-transition-wrapper.page-fade-out {
+  animation: pageFadeOut 0.4s var(--transition-smooth) forwards;
+}
+
+@keyframes pageFadeIn {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pageFadeOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-15px); }
+}
+
 /* ===== Ambient Background ===== */
 .ambient-background {
   position: fixed;

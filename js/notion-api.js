@@ -13,8 +13,8 @@ const NotionAPI = (() => {
   // ====== 分类固定列表（Notion 不提供动态获取接口） ======
   const CATEGORIES = [
     { name: "全部", emoji: "📋", color: "cyan" },
+    { name: "精选", emoji: "🌟", color: "pink" },
     { name: "技术", emoji: "💻", color: "blue" },
-    { name: "设计", emoji: "🎨", color: "pink" },
     { name: "随想", emoji: "💭", color: "purple" },
     { name: "教程", emoji: "📖", color: "green" },
     { name: "工具", emoji: "🔧", color: "orange" },
@@ -55,7 +55,10 @@ const NotionAPI = (() => {
       }
     );
 
-    if (!res.ok) throw new Error(`Notion API error: ${res.status}`);
+    if (!res.ok) {
+      if (res.status === 400) return [];
+      throw new Error(`Notion API error: ${res.status}`);
+    }
     const data = await res.json();
     const mappedData = data.results.map(mapNotionPage);
 
@@ -156,7 +159,7 @@ const NotionAPI = (() => {
   function gradientForCategory(category) {
     const map = {
       技术: "linear-gradient(135deg, #0d1b4b, #1a3a6b)",
-      设计: "linear-gradient(135deg, #3b0a45, #6d1a7e)",
+      精选: "linear-gradient(135deg, #3b0a45, #6d1a7e)",
       随想: "linear-gradient(135deg, #1a0a3b, #3d1a7e)",
       教程: "linear-gradient(135deg, #0a2e1a, #1a5c35)",
       工具: "linear-gradient(135deg, #2e1a00, #5c3800)",

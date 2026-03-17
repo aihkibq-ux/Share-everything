@@ -54,6 +54,8 @@
     <!-- Particles -->
     <canvas id="particles-canvas"></canvas>
 
+    <!-- Page Transition Wrapper -->
+    <div class="page-transition-wrapper" id="pageWrapper">
     <!-- Content -->
     <div class="post-container">
       <article class="post-article" id="postArticle">
@@ -83,6 +85,8 @@
       </article>
     </div>
 
+    </div>
+
     <!-- Empty State -->
     <div class="empty-state" id="postEmpty" style="display: none;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -94,6 +98,7 @@
         <a href="blog.html" style="color: var(--accent-cyan); text-decoration: none;">返回博客列表</a>
       </p>
     </div>
+    </div> <!-- End Page Transition Wrapper -->
 
     <script src="js/common.js"></script>
     <script src="js/notion-api.js"></script>
@@ -127,7 +132,7 @@
         // Category colors
         const categoryColors = {
           "技术": { bg: "rgba(41, 121, 255, 0.1)", color: "#2979ff", border: "rgba(41, 121, 255, 0.2)" },
-          "设计": { bg: "rgba(255, 64, 129, 0.1)", color: "#ff4081", border: "rgba(255, 64, 129, 0.2)" },
+          "精选": { bg: "rgba(255, 64, 129, 0.1)", color: "#ff4081", border: "rgba(255, 64, 129, 0.2)" },
           "随想": { bg: "rgba(213, 0, 249, 0.1)", color: "#d500f9", border: "rgba(213, 0, 249, 0.2)" },
           "教程": { bg: "rgba(0, 230, 118, 0.1)", color: "#00e676", border: "rgba(0, 230, 118, 0.2)" },
           "工具": { bg: "rgba(255, 171, 0, 0.1)", color: "#ffab00", border: "rgba(255, 171, 0, 0.2)" },

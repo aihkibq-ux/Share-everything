@@ -234,3 +234,48 @@ document.addEventListener("mousedown", (e) => {
     window.getSelection()?.removeAllRanges();
   }
 });
+
+/* ===== 路由跳转平滑动画 & 预加载 ===== */
+document.addEventListener("DOMContentLoaded", () => {
+  // 1. 拦截站内链接，添加淡出动画
+  document.body.addEventListener("click", (e) => {
+    const link = e.target.closest("a");
+    if (!link || !link.href) return;
+    
+    // 只拦截当前域名的内部链接，且不是新标签页
+    if (link.target !== "_blank" && link.href.startsWith(window.location.origin)) {
+      // 忽略仅 hash 的变化 (锚点)
+      const url = new URL(link.href);
+      if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash !== window.location.hash) {
+        return; 
+      }
+      
+      e.preventDefault();
+      const wrapper = document.getElementById("pageWrapper");
+      if (wrapper) {
+        wrapper.classList.add("page-fade-out");
+      } else {
+        document.body.classList.add("page-fade-out"); // fallback
+      }
+      setTimeout(() => {
+        window.location.href = link.href;
+      }, 350); // 与 CSS 动画时长匹配
+    }
+  });
+
+  // 2. 鼠标悬停文章卡片时自动预加载数据
+  document.body.addEventListener("mouseover", (e) => {
+    const card = e.target.closest("a.blog-card");
+    if (card && card.href) {
+      if (!card.dataset.preloaded) {
+        card.dataset.preloaded = "true";
+        const url = new URL(card.href);
+        const id = url.searchParams.get("id");
+        if (id && window.NotionAPI && NotionAPI.getPost) {
+          // 静默预压入 sessionStorage 缓存中
+          NotionAPI.getPost(id).catch(() => {});
+        }
+      }
+    }
+  });
+});
