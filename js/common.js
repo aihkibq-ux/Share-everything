@@ -14,7 +14,7 @@ let mouseX = 0,
 let targetMouseX = 0,
   targetMouseY = 0;
 
-const particleCount = 600;
+let particleCount = window.innerWidth < 768 ? 200 : 600;
 const colors = [
   "rgba(0, 255, 255, 1)",
   "rgba(77, 159, 255, 0.9)",
@@ -88,7 +88,7 @@ function initParticles() {
 }
 
 // Reusable draw-data objects to reduce GC pressure
-const drawPool = Array.from({ length: particleCount }, () => ({
+let drawPool = Array.from({ length: particleCount }, () => ({
   px: 0,
   py: 0,
   pSize: 0,
@@ -96,10 +96,9 @@ const drawPool = Array.from({ length: particleCount }, () => ({
   color: "",
 }));
 
-// Pre-allocate buckets to eliminate per-frame garbage collection
 const bucketKeys = colors;
-const bucketArrays = {};
-const bucketCounts = {};
+let bucketArrays = {};
+let bucketCounts = {};
 bucketKeys.forEach((c) => {
   bucketArrays[c] = Array(particleCount);
   bucketCounts[c] = 0;
@@ -144,7 +143,6 @@ function animateParticles() {
   rafId = requestAnimationFrame(animateParticles);
 }
 
-// Optimized resize listener: pauses animation immediately
 let resizeTimer = null;
 window.addEventListener("resize", () => {
   if (rafId) {
@@ -154,6 +152,19 @@ window.addEventListener("resize", () => {
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     resize();
+    
+    // Update particle count on resize in case of orientation change
+    const newCount = window.innerWidth < 768 ? 200 : 600;
+    if (newCount !== particleCount) {
+      particleCount = newCount;
+      drawPool = Array.from({ length: particleCount }, () => ({
+        px: 0, py: 0, pSize: 0, opacity: 0, color: "",
+      }));
+      bucketKeys.forEach((c) => {
+        bucketArrays[c] = Array(particleCount);
+      });
+    }
+
     initParticles();
     animateParticles();
   }, 300);
