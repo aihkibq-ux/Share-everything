@@ -140,13 +140,13 @@ body {
 
 @keyframes orb-drift {
   0% {
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate(0, 0) scale(1);
   }
   50% {
-    transform: translate3d(5vw, 5vh, 0) scale(1.05);
+    transform: translate(5vw, 5vh) scale(1.05);
   }
   100% {
-    transform: translate3d(-5vw, 10vh, 0) scale(0.95);
+    transform: translate(-5vw, 10vh) scale(0.95);
   }
 }
 
@@ -179,7 +179,6 @@ body {
   pointer-events: none;
   z-index: 2;
   will-change: transform;
-  transform: translate3d(-1000px, -1000px, 0); /* Initial state out of screen */
 }
 
 /* ===== Content Layer ===== */
