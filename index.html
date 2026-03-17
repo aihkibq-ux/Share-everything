@@ -76,13 +76,13 @@
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              stroke-width="2.5"
+              stroke-width="2"
               stroke-linecap="round"
               stroke-linejoin="round"
             >
-              <polygon points="5 3 19 12 5 21 5 3" />
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
             </svg>
-            <span class="btn-tooltip">继续</span>
+            <span class="btn-tooltip">精选</span>
           </button>
           <button class="btn btn-wiki" id="ctaWiki">
             <svg
@@ -131,7 +131,7 @@
         window.location.href = "blog.html";
       });
       document.getElementById("ctaStart").addEventListener("click", () => {
-        window.location.href = "blog.html";
+        window.location.href = "blog.html?category=精选";
       });
       document.getElementById("ctaWiki").addEventListener("click", () => {
         window.location.href = "blog.html?category=收藏";

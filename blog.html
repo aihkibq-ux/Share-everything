@@ -184,11 +184,31 @@
 
       async function renderPosts() {
         try {
-          const data = await NotionAPI.queryPosts({
-            category: currentCategory,
-            search: currentSearch,
-            page: currentPage,
-          });
+          let data;
+
+          // "收藏" 分类 → 显示本地收藏的文章
+          if (currentCategory === "收藏") {
+            let bookmarks = getBookmarks();
+            // 搜索过滤
+            if (currentSearch) {
+              const q = currentSearch.toLowerCase();
+              bookmarks = bookmarks.filter(p =>
+                p.title.toLowerCase().includes(q) ||
+                (p.excerpt || "").toLowerCase().includes(q)
+              );
+            }
+            const total = bookmarks.length;
+            const totalPages = Math.max(1, Math.ceil(total / 9));
+            const cp = Math.min(currentPage, totalPages);
+            const start = (cp - 1) * 9;
+            data = { results: bookmarks.slice(start, start + 9), total, totalPages, currentPage: cp };
+          } else {
+            data = await NotionAPI.queryPosts({
+              category: currentCategory,
+              search: currentSearch,
+              page: currentPage,
+            });
+          }
 
           if (data.results.length === 0) {
             gridEl.innerHTML = "";
@@ -219,6 +239,7 @@
       function renderCard(post) {
         const esc = NotionAPI.escapeHtml;
         const catColor = NotionAPI.getCategoryColor(post.category);
+        const bookmarked = isBookmarked(post.id);
 
         const safeTitle = esc(post.title);
         const safeExcerpt = esc(post.excerpt);
@@ -232,7 +253,7 @@
                <span>${post.coverEmoji || '📝'}</span>
              </div>`;
         return `
-          <a href="post.html?id=${encodeURIComponent(post.id)}" class="blog-card" data-reveal>
+          <a href="post.html?id=${encodeURIComponent(post.id)}" class="blog-card" data-reveal data-post-id="${esc(post.id)}">
             ${coverHtml}
             <div class="blog-card-body">
               <div class="blog-card-category" style="background: ${catColor.bg}; color: ${catColor.color}; border-color: ${catColor.border}">${safeCategory}</div>
@@ -255,6 +276,11 @@
                   </svg>
                   ${esc(post.readTime)}
                 </span>
+                <button class="card-bookmark-btn${bookmarked ? ' bookmarked' : ''}" data-bookmark-id="${esc(post.id)}" title="${bookmarked ? '取消收藏' : '收藏'}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </button>
               </div>
             </div>
           </a>
@@ -311,6 +337,80 @@
           // localStorage not available
         }
       }
+
+      /* ===== Bookmark (收藏) ===== */
+      const BOOKMARK_KEY = "bookmarked_posts";
+
+      function getBookmarks() {
+        try {
+          return JSON.parse(localStorage.getItem(BOOKMARK_KEY) || "[]");
+        } catch (e) { return []; }
+      }
+
+      function isBookmarked(id) {
+        return getBookmarks().some(b => b.id === id);
+      }
+
+      function toggleBookmarkById(postId) {
+        let bookmarks = getBookmarks();
+        const exists = bookmarks.some(b => b.id === postId);
+        if (exists) {
+          bookmarks = bookmarks.filter(b => b.id !== postId);
+        } else {
+          // 从当前渲染的数据中找到 post 信息
+          const card = document.querySelector(`[data-post-id="${postId}"]`);
+          if (card) {
+            const title = card.querySelector('.blog-card-title')?.textContent || '';
+            const excerpt = card.querySelector('.blog-card-excerpt')?.textContent || '';
+            const category = card.querySelector('.blog-card-category')?.textContent || '';
+            const metaSpans = card.querySelectorAll('.blog-card-meta > span');
+            const date = metaSpans[0]?.textContent?.trim() || '';
+            const readTime = metaSpans[1]?.textContent?.trim() || '';
+            const img = card.querySelector('.blog-card-cover-img img');
+            const emoji = card.querySelector('.blog-card-cover-placeholder:not(.blog-card-cover-img) span');
+            bookmarks.unshift({
+              id: postId,
+              title,
+              excerpt,
+              category,
+              date,
+              readTime,
+              coverImage: img?.src || null,
+              coverEmoji: emoji?.textContent || '📝',
+              coverGradient: null,
+              timestamp: Date.now(),
+            });
+          }
+        }
+        try {
+          localStorage.setItem(BOOKMARK_KEY, JSON.stringify(bookmarks));
+        } catch (e) {}
+        return !exists;
+      }
+
+      // 事件委托：处理卡片上的收藏按钮点击
+      gridEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('.card-bookmark-btn');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const postId = btn.dataset.bookmarkId;
+        const nowBookmarked = toggleBookmarkById(postId);
+
+        btn.classList.toggle('bookmarked', nowBookmarked);
+        btn.title = nowBookmarked ? '取消收藏' : '收藏';
+
+        // 弹跳动画
+        btn.classList.remove('bounce');
+        void btn.offsetWidth;
+        btn.classList.add('bounce');
+
+        // 如果在「收藏」分类下取消收藏，重新渲染列表
+        if (!nowBookmarked && currentCategory === '收藏') {
+          setTimeout(() => renderPosts(), 300);
+        }
+      });
 
       /* ===== Init ===== */
       renderPosts();

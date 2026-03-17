@@ -83,6 +83,15 @@
         <!-- Post Content (rendered by JS) -->
         <div id="postContent" style="display: none;"></div>
       </article>
+
+    <!-- Floating Bookmark Button -->
+    <button class="fab-bookmark" id="fabBookmark" style="display: none;" aria-label="收藏文章">
+      <svg class="fab-bookmark-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+      </svg>
+      <span class="fab-bookmark-label">收藏</span>
+    </button>
+
     <!-- Empty State -->
     <div class="empty-state" id="postEmpty" style="display: none;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -171,6 +180,9 @@
 
         // Save reading history
         saveReadingHistory(post);
+
+        // Show bookmark button
+        initBookmark(post);
         } catch (error) {
           console.error("Failed to load post:", error);
           showEmpty();
@@ -199,6 +211,72 @@
         } catch (e) {
           // localStorage not available
         }
+      }
+
+      /* ===== Bookmark (收藏) ===== */
+      const BOOKMARK_KEY = "bookmarked_posts";
+
+      function getBookmarks() {
+        try {
+          return JSON.parse(localStorage.getItem(BOOKMARK_KEY) || "[]");
+        } catch (e) { return []; }
+      }
+
+      function isBookmarked(id) {
+        return getBookmarks().some(b => b.id === id);
+      }
+
+      function toggleBookmark(post) {
+        let bookmarks = getBookmarks();
+        const exists = bookmarks.some(b => b.id === post.id);
+
+        if (exists) {
+          bookmarks = bookmarks.filter(b => b.id !== post.id);
+        } else {
+          bookmarks.unshift({
+            id: post.id,
+            title: post.title,
+            category: post.category,
+            excerpt: post.excerpt || "",
+            date: post.date || "",
+            readTime: post.readTime || "",
+            coverImage: post.coverImage || null,
+            coverEmoji: post.coverEmoji || "📝",
+            coverGradient: post.coverGradient || null,
+            timestamp: Date.now(),
+          });
+        }
+
+        try {
+          localStorage.setItem(BOOKMARK_KEY, JSON.stringify(bookmarks));
+        } catch (e) {}
+
+        return !exists; // return new state
+      }
+
+      function initBookmark(post) {
+        const fab = document.getElementById("fabBookmark");
+        const label = fab.querySelector(".fab-bookmark-label");
+        fab.style.display = "flex";
+
+        // Set initial state
+        if (isBookmarked(post.id)) {
+          fab.classList.add("bookmarked");
+          label.textContent = "已收藏";
+        }
+
+        fab.addEventListener("click", () => {
+          const nowBookmarked = toggleBookmark(post);
+
+          // Update UI
+          fab.classList.toggle("bookmarked", nowBookmarked);
+          label.textContent = nowBookmarked ? "已收藏" : "收藏";
+
+          // Bounce animation
+          fab.classList.remove("bounce");
+          void fab.offsetWidth; // force reflow
+          fab.classList.add("bounce");
+        });
       }
 
       /* ===== Init ===== */

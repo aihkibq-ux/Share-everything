@@ -785,6 +785,54 @@ body {
   vertical-align: -2px;
 }
 
+/* Card Bookmark Button */
+.card-bookmark-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.3s var(--transition-smooth);
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.card-bookmark-btn svg {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  transition: all 0.3s var(--transition-smooth);
+}
+
+.card-bookmark-btn:hover {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.06);
+  transform: scale(1.15);
+}
+
+.card-bookmark-btn.bookmarked {
+  color: #ffab00;
+}
+
+.card-bookmark-btn.bookmarked svg {
+  fill: #ffab00;
+  stroke: #ffab00;
+}
+
+.card-bookmark-btn.bookmarked:hover {
+  background: rgba(255, 171, 0, 0.1);
+}
+
+.card-bookmark-btn.bounce svg {
+  animation: fabBounce 0.5s var(--transition-smooth);
+}
+
 /* ===== Pagination ===== */
 .pagination {
   display: flex;
@@ -1092,4 +1140,112 @@ body {
 @keyframes fade-out {
   from { opacity: 1; transform: translateY(0); }
   to { opacity: 0; transform: translateY(-15px); }
+}
+
+/* ===== Floating Bookmark Button ===== */
+.fab-bookmark {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 100px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: var(--text-secondary);
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: all 0.4s var(--transition-smooth);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  animation: fabSlideIn 0.5s var(--transition-smooth) 0.8s both;
+}
+
+@keyframes fabSlideIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.fab-bookmark:hover {
+  width: 108px;
+  gap: 6px;
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-hover);
+  color: var(--text-primary);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+.fab-bookmark-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  transition: all 0.3s var(--transition-smooth);
+}
+
+.fab-bookmark-label {
+  white-space: nowrap;
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  transition: all 0.4s var(--transition-smooth);
+}
+
+.fab-bookmark:hover .fab-bookmark-label {
+  opacity: 1;
+  width: auto;
+}
+
+/* Bookmarked state */
+.fab-bookmark.bookmarked {
+  border-color: rgba(255, 171, 0, 0.3);
+  background: rgba(255, 171, 0, 0.1);
+  color: #ffab00;
+}
+
+.fab-bookmark.bookmarked .fab-bookmark-icon {
+  fill: #ffab00;
+  stroke: #ffab00;
+}
+
+.fab-bookmark.bookmarked:hover {
+  border-color: rgba(255, 171, 0, 0.4);
+  background: rgba(255, 171, 0, 0.15);
+  box-shadow: 0 8px 32px rgba(255, 171, 0, 0.15);
+}
+
+/* Bounce animation on toggle */
+@keyframes fabBounce {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.25); }
+  50% { transform: scale(0.9); }
+  70% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+.fab-bookmark.bounce .fab-bookmark-icon {
+  animation: fabBounce 0.5s var(--transition-smooth);
+}
+
+@media (max-width: 768px) {
+  .fab-bookmark {
+    bottom: 24px;
+    right: 24px;
+    width: 44px;
+    height: 44px;
+    padding: 0 12px;
+  }
+  .fab-bookmark:hover {
+    width: 100px;
+  }
 }
