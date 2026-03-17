@@ -130,7 +130,6 @@ function animateParticles() {
     const count = bucketCounts[color];
     if (count === 0) continue;
 
-    ctx.shadowColor = color;
     ctx.fillStyle = color;
 
     for (let j = 0; j < count; j++) {

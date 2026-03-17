@@ -23,6 +23,17 @@ const NotionAPI = (() => {
 
   // ====== Notion API 调用 ======
   async function fetchFromNotion(category, fetchAll = false) {
+    const cacheKey = `notion_query_${category || "all"}_${fetchAll}`;
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Date.now() - parsed.timestamp < 1000 * 60 * 5) { // 5 分钟缓存
+          return parsed.data;
+        }
+      }
+    } catch (e) {}
+
     const body = {
       page_size: fetchAll ? 100 : CONFIG.pageSize,
       sorts: [{ property: "Date", direction: "descending" }],
@@ -46,7 +57,16 @@ const NotionAPI = (() => {
 
     if (!res.ok) throw new Error(`Notion API error: ${res.status}`);
     const data = await res.json();
-    return data.results.map(mapNotionPage);
+    const mappedData = data.results.map(mapNotionPage);
+
+    try {
+      sessionStorage.setItem(cacheKey, JSON.stringify({
+        timestamp: Date.now(),
+        data: mappedData
+      }));
+    } catch (e) {}
+
+    return mappedData;
   }
 
   async function liveQueryDatabase({ category, search, page = 1 }) {
@@ -76,6 +96,17 @@ const NotionAPI = (() => {
   }
 
   async function liveGetPage(pageId) {
+    const cacheKey = `notion_page_${pageId}`;
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Date.now() - parsed.timestamp < 1000 * 60 * 10) { // 10 分钟缓存
+          return parsed.data;
+        }
+      }
+    } catch (e) {}
+
     const [pageRes, blocksRes] = await Promise.all([
       fetch(`${CONFIG.workerUrl}/pages/${pageId}`),
       fetch(`${CONFIG.workerUrl}/blocks/${pageId}/children?page_size=100`),
@@ -86,10 +117,19 @@ const NotionAPI = (() => {
     const page = await pageRes.json();
     const blocks = await blocksRes.json();
 
-    return {
+    const mappedData = {
       ...mapNotionPage(page),
       content: blocks.results.map(mapNotionBlock),
     };
+
+    try {
+      sessionStorage.setItem(cacheKey, JSON.stringify({
+        timestamp: Date.now(),
+        data: mappedData
+      }));
+    } catch (e) {}
+
+    return mappedData;
   }
 
   // ====== 数据映射 ======
