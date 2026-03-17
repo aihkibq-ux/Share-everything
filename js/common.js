@@ -234,3 +234,23 @@ document.addEventListener("mousedown", (e) => {
     window.getSelection()?.removeAllRanges();
   }
 });
+
+/* ===== Swup Initialization ===== */
+if (typeof Swup !== "undefined" && typeof SwupScriptsPlugin !== "undefined") {
+  window.swup = new Swup({
+    animationSelector: '[class*="transition-"]',
+    containers: ['#swup'],
+    plugins: [
+      new SwupScriptsPlugin({
+        head: true,
+        body: true
+      })
+    ]
+  });
+
+  window.swup.hooks.on("page:view", () => {
+    if (typeof window.initBlogCardReveal === "function") {
+      window.initBlogCardReveal();
+    }
+  });
+}
