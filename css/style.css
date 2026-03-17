@@ -1131,14 +1131,3 @@ body {
   from { opacity: 1; transform: translateY(0); }
   to { opacity: 0; transform: translateY(-15px); }
 }
-
-/* ===== Swup Transitions ===== */
-html.is-animating .transition-fade {
-  opacity: 0;
-  transform: translateY(15px);
-}
-.transition-fade {
-  transition: opacity 0.4s var(--transition-smooth), transform 0.4s var(--transition-smooth);
-  opacity: 1;
-  transform: translateY(0);
-}

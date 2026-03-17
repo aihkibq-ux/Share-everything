@@ -12,8 +12,6 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="css/style.css" />
-    <script src="https://unpkg.com/swup@4"></script>
-    <script src="https://unpkg.com/@swup/scripts-plugin@2"></script>
   </head>
   <body>
 
@@ -33,7 +31,7 @@
     <canvas id="particles-canvas"></canvas>
 
     <!-- Content -->
-    <main id="swup" class="transition-fade content-layer">
+    <div class="content-layer">
       <!-- Hero -->
       <section class="hero-section" id="hero">
         <h1 class="hero-title">Share Everything</h1>
@@ -108,7 +106,7 @@
       </section>
 
 
-    </main>
+    </div>
 
     <script src="js/common.js"></script>
     <script>
@@ -119,9 +117,7 @@
       function executeSearch() {
         const query = searchInput.value.trim();
         if (query) {
-          const url = `blog.html?search=${encodeURIComponent(query)}`;
-          if (window.swup) window.swup.navigate(url);
-          else window.location.href = url;
+          window.location.href = `blog.html?search=${encodeURIComponent(query)}`;
         }
       }
 
@@ -131,14 +127,15 @@
       searchIcon.addEventListener("click", executeSearch);
 
       /* ===== Button Routes ===== */
-      function navigateTo(url) {
-        if (window.swup) window.swup.navigate(url);
-        else window.location.href = url;
-      }
-
-      document.getElementById("ctaHome").addEventListener("click", () => navigateTo("blog.html"));
-      document.getElementById("ctaStart").addEventListener("click", () => navigateTo("blog.html"));
-      document.getElementById("ctaWiki").addEventListener("click", () => navigateTo("blog.html?category=收藏"));
+      document.getElementById("ctaHome").addEventListener("click", () => {
+        window.location.href = "blog.html";
+      });
+      document.getElementById("ctaStart").addEventListener("click", () => {
+        window.location.href = "blog.html";
+      });
+      document.getElementById("ctaWiki").addEventListener("click", () => {
+        window.location.href = "blog.html?category=收藏";
+      });
     </script>
   </body>
 </html>
