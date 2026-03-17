@@ -21,19 +21,46 @@ const NotionAPI = (() => {
     { name: "收藏", emoji: "⭐", color: "orange" },
   ];
 
+  // ====== 缓存工具 ======
+  const CACHE_TTL = 1000 * 60 * 30; // 30 分钟硬过期
+  const STALE_TTL = 1000 * 60 * 5;  // 5 分钟后视为 stale，后台刷新
+
+  function getCache(key) {
+    try {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) { return null; }
+  }
+
+  function setCache(key, data) {
+    try {
+      sessionStorage.setItem(key, JSON.stringify({ timestamp: Date.now(), data }));
+    } catch (e) {}
+  }
+
   // ====== Notion API 调用 ======
   async function fetchFromNotion(category, fetchAll = false) {
     const cacheKey = `notion_query_${category || "all"}_${fetchAll}`;
-    try {
-      const cached = sessionStorage.getItem(cacheKey);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Date.now() - parsed.timestamp < 1000 * 60 * 5) { // 5 分钟缓存
-          return parsed.data;
-        }
-      }
-    } catch (e) {}
+    const cached = getCache(cacheKey);
 
+    if (cached) {
+      const age = Date.now() - cached.timestamp;
+      if (age < CACHE_TTL) {
+        // 缓存未硬过期
+        if (age > STALE_TTL) {
+          // stale: 先返回旧数据，后台静默刷新
+          fetchFromNotionRemote(category, fetchAll, cacheKey).catch(() => {});
+        }
+        return cached.data;
+      }
+    }
+
+    // 无缓存或已硬过期，必须等待网络
+    return fetchFromNotionRemote(category, fetchAll, cacheKey);
+  }
+
+  async function fetchFromNotionRemote(category, fetchAll, cacheKey) {
     const body = {
       page_size: fetchAll ? 100 : CONFIG.pageSize,
       sorts: [{ property: "Date", direction: "descending" }],
@@ -61,14 +88,7 @@ const NotionAPI = (() => {
     }
     const data = await res.json();
     const mappedData = data.results.map(mapNotionPage);
-
-    try {
-      sessionStorage.setItem(cacheKey, JSON.stringify({
-        timestamp: Date.now(),
-        data: mappedData
-      }));
-    } catch (e) {}
-
+    setCache(cacheKey, mappedData);
     return mappedData;
   }
 
@@ -100,16 +120,23 @@ const NotionAPI = (() => {
 
   async function liveGetPage(pageId) {
     const cacheKey = `notion_page_${pageId}`;
-    try {
-      const cached = sessionStorage.getItem(cacheKey);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Date.now() - parsed.timestamp < 1000 * 60 * 10) { // 10 分钟缓存
-          return parsed.data;
-        }
-      }
-    } catch (e) {}
+    const cached = getCache(cacheKey);
 
+    if (cached) {
+      const age = Date.now() - cached.timestamp;
+      if (age < CACHE_TTL) {
+        if (age > STALE_TTL) {
+          // stale: 后台静默刷新
+          fetchPageRemote(pageId, cacheKey).catch(() => {});
+        }
+        return cached.data;
+      }
+    }
+
+    return fetchPageRemote(pageId, cacheKey);
+  }
+
+  async function fetchPageRemote(pageId, cacheKey) {
     const [pageRes, blocksRes] = await Promise.all([
       fetch(`${CONFIG.workerUrl}/pages/${pageId}`),
       fetch(`${CONFIG.workerUrl}/blocks/${pageId}/children?page_size=100`),
@@ -125,13 +152,7 @@ const NotionAPI = (() => {
       content: blocks.results.map(mapNotionBlock),
     };
 
-    try {
-      sessionStorage.setItem(cacheKey, JSON.stringify({
-        timestamp: Date.now(),
-        data: mappedData
-      }));
-    } catch (e) {}
-
+    setCache(cacheKey, mappedData);
     return mappedData;
   }
 
