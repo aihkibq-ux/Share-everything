@@ -113,6 +113,31 @@
       if (params.get("search")) currentSearch = params.get("search");
       if (params.get("page")) currentPage = parseInt(params.get("page")) || 1;
 
+      /* ===== Update UI ===== */
+      function updatePageUI() {
+        const titleEl = document.querySelector(".page-title");
+        if (titleEl) {
+          titleEl.textContent = currentCategory === "全部" ? "总览" : currentCategory;
+        }
+
+        const topActions = document.querySelectorAll(".top-actions .action-btn");
+        topActions.forEach(btn => btn.classList.remove("active"));
+        
+        topActions.forEach(btn => {
+          const span = btn.querySelector("span");
+          if (span) {
+            const text = span.textContent.trim();
+            if (currentCategory === "收藏" && text === "收藏") {
+              btn.classList.add("active");
+            } else if (currentCategory !== "收藏" && text === "总览") {
+              btn.classList.add("active");
+            }
+          }
+        });
+      }
+
+      updatePageUI();
+
       /* ===== Render Filters ===== */
       const filtersEl = document.getElementById("blogFilters");
       const categories = NotionAPI.getCategories();
@@ -125,6 +150,7 @@
           currentCategory = cat.name;
           currentPage = 1;
           updateURL();
+          updatePageUI();
           renderPosts();
           // Update active state
           filtersEl.querySelectorAll(".filter-btn").forEach((b) => b.classList.remove("active"));
