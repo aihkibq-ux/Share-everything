@@ -180,36 +180,43 @@
       const paginationEl = document.getElementById("pagination");
 
       async function renderPosts() {
-        const data = await NotionAPI.queryPosts({
-          category: currentCategory,
-          search: currentSearch,
-          page: currentPage,
-        });
+        try {
+          const data = await NotionAPI.queryPosts({
+            category: currentCategory,
+            search: currentSearch,
+            page: currentPage,
+          });
 
-        if (data.results.length === 0) {
+          if (data.results.length === 0) {
+            gridEl.innerHTML = "";
+            emptyEl.style.display = "flex";
+            paginationEl.innerHTML = "";
+            return;
+          }
+
+          emptyEl.style.display = "none";
+          gridEl.innerHTML = data.results.map(renderCard).join("");
+          renderPagination(data);
+
+          // Trigger reveal animation
+          requestAnimationFrame(() => {
+            window.initBlogCardReveal();
+          });
+
+          // Save to reading history
+          saveHistory();
+        } catch (error) {
+          console.error("Failed to load posts:", error);
           gridEl.innerHTML = "";
           emptyEl.style.display = "flex";
           paginationEl.innerHTML = "";
-          return;
         }
-
-        emptyEl.style.display = "none";
-        gridEl.innerHTML = data.results.map(renderCard).join("");
-        renderPagination(data);
-
-        // Trigger reveal animation
-        requestAnimationFrame(() => {
-          window.initBlogCardReveal();
-        });
-
-        // Save to reading history
-        saveHistory();
       }
 
       function renderCard(post) {
         const categoryColors = {
           "技术": "rgba(41, 121, 255, 0.1); color: #2979ff; border-color: rgba(41, 121, 255, 0.2)",
-          "设计": "rgba(255, 64, 129, 0.1); color: #ff4081; border-color: rgba(255, 64, 129, 0.2)",
+          "精选": "rgba(255, 64, 129, 0.1); color: #ff4081; border-color: rgba(255, 64, 129, 0.2)",
           "随想": "rgba(213, 0, 249, 0.1); color: #d500f9; border-color: rgba(213, 0, 249, 0.2)",
           "教程": "rgba(0, 230, 118, 0.1); color: #00e676; border-color: rgba(0, 230, 118, 0.2)",
           "工具": "rgba(255, 171, 0, 0.1); color: #ffab00; border-color: rgba(255, 171, 0, 0.2)",
