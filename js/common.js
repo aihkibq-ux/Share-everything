@@ -279,3 +279,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
+
+// 3. 处理浏览器的后退/前进缓存 (BFCache)
+window.addEventListener("pageshow", (e) => {
+  // 如果页面是从缓存中加载的 (或者有些浏览器总是触发)，确保移除淡出类
+  const wrapper = document.getElementById("pageWrapper");
+  if (wrapper) wrapper.classList.remove("page-fade-out");
+  document.body.classList.remove("page-fade-out"); // fallback
+});
