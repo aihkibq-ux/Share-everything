@@ -83,10 +83,6 @@
         <!-- Post Content (rendered by JS) -->
         <div id="postContent" style="display: none;"></div>
       </article>
-    </div>
-
-    </div>
-
     <!-- Empty State -->
     <div class="empty-state" id="postEmpty" style="display: none;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -118,12 +114,13 @@
           return;
         }
 
-        const post = await NotionAPI.getPost(postId);
+        try {
+          const post = await NotionAPI.getPost(postId);
 
-        if (!post) {
-          showEmpty();
-          return;
-        }
+          if (!post) {
+            showEmpty();
+            return;
+          }
 
         // Update page title
         document.title = `${post.title} — Share Everything`;
@@ -174,6 +171,10 @@
 
         // Save reading history
         saveReadingHistory(post);
+        } catch (error) {
+          console.error("Failed to load post:", error);
+          showEmpty();
+        }
       }
 
       function showEmpty() {

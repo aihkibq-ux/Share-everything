@@ -265,7 +265,7 @@ const NotionAPI = (() => {
         case "heading_2":   html += `<h2>${block.text}</h2>`; break;
         case "heading_3":   html += `<h3>${block.text}</h3>`; break;
         case "paragraph":   html += block.text ? `<p>${block.text}</p>` : ""; break;
-        case "code":        html += `<pre><code class="language-${block.language}">${escapeHtml(block.text)}</code></pre>`; break;
+        case "code":        html += `<pre><code class="language-${escapeHtml(block.language)}">${escapeHtml(block.text)}</code></pre>`; break;
         case "quote":       html += `<blockquote>${block.text}</blockquote>`; break;
         case "divider":     html += "<hr>"; break;
         case "image":       html += `<img src="${block.url}" alt="${escapeHtml(block.caption)}" loading="lazy">`; break;
