@@ -14,7 +14,7 @@ let mouseX = 0,
 let targetMouseX = 0,
   targetMouseY = 0;
 
-let particleCount = window.innerWidth < 768 ? 200 : 600;
+let particleCount = window.innerWidth < 768 ? 120 : 350;
 const colors = [
   "rgba(0, 255, 255, 1)",
   "rgba(77, 159, 255, 0.9)",
@@ -134,9 +134,8 @@ function animateParticles() {
     for (let j = 0; j < count; j++) {
       const d = bucketArrays[color][j];
       ctx.globalAlpha = d.opacity;
-      ctx.beginPath();
-      ctx.arc(d.px, d.py, d.pSize, 0, Math.PI * 2);
-      ctx.fill();
+      const s = d.pSize * 2;
+      ctx.fillRect(d.px - d.pSize, d.py - d.pSize, s, s);
     }
   }
   ctx.globalAlpha = 1;
@@ -154,7 +153,7 @@ window.addEventListener("resize", () => {
     resize();
     
     // Update particle count on resize in case of orientation change
-    const newCount = window.innerWidth < 768 ? 200 : 600;
+    const newCount = window.innerWidth < 768 ? 120 : 350;
     if (newCount !== particleCount) {
       particleCount = newCount;
       drawPool = Array.from({ length: particleCount }, () => ({
@@ -181,6 +180,18 @@ resize();
 initParticles();
 animateParticles();
 
+// 页面不可见时暂停粒子动画，节省 CPU/GPU
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  } else if (!rafId && ctx) {
+    animateParticles();
+  }
+});
+
 /* ===== Cursor Glow, Spotlight & Parallax (merged mousemove) ===== */
 const cursorGlow = document.getElementById("cursorGlow");
 let mouseAF = null;
@@ -197,7 +208,7 @@ document.addEventListener("mousemove", (e) => {
   mouseAF = requestAnimationFrame(() => {
     // Global Cursor Glow
     if (cursorGlow) {
-      cursorGlow.style.transform = `translate(${clientX - 300}px, ${clientY - 300}px)`;
+      cursorGlow.style.transform = `translate(${clientX - 200}px, ${clientY - 200}px)`;
     }
     mouseAF = null;
   });
@@ -259,7 +270,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       setTimeout(() => {
         window.location.href = link.href;
-      }, 350); // 与 CSS 动画时长匹配
+      }, 200); // 与 CSS 动画时长匹配
     }
   });
 
