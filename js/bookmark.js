@@ -64,7 +64,7 @@ const BookmarkManager = (() => {
     if (exists) {
       bookmarks = bookmarks.filter(b => b.id !== postId);
     } else {
-      const card = document.querySelector(`[data-post-id="${postId}"]`);
+      const card = document.querySelector(`[data-post-id="${CSS.escape(postId)}"]`);
       if (card) {
         const title = card.querySelector('.blog-card-title')?.textContent || '';
         const excerpt = card.querySelector('.blog-card-excerpt')?.textContent || '';

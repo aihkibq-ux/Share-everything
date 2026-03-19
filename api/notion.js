@@ -12,8 +12,11 @@
 const NOTION_BASE = "https://api.notion.com/v1";
 
 module.exports = async function handler(req, res) {
-  // CORS 头
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  // CORS 头 — 仅允许自己的域名
+  const allowedOrigin = req.headers.origin === "https://www.0000068.xyz"
+    ? "https://www.0000068.xyz"
+    : "https://0000068.xyz";
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Access-Control-Max-Age", "86400");

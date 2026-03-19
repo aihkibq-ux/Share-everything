@@ -174,9 +174,15 @@ window.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse") t
 window.addEventListener("pointerup", (e) => { if (e.pointerType === "mouse") targetSpeedMultiplier = 1; });
 window.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") targetSpeedMultiplier = 1; });
 
-resize();
-initParticles();
-animateParticles();
+// 尊重用户的减少动画偏好
+const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+if (!prefersReducedMotion) {
+  resize();
+  initParticles();
+  animateParticles();
+} else {
+  resize(); // 仍需设置 canvas 尺寸
+}
 
 // 页面不可见时暂停粒子动画，节省 CPU/GPU
 document.addEventListener("visibilitychange", () => {
