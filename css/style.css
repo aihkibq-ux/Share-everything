@@ -54,18 +54,10 @@ body {
   z-index: 10;
 }
 
-.page-transition-wrapper.page-fade-out {
-  animation: pageFadeOut 0.2s var(--transition-smooth) forwards;
-}
 
 @keyframes pageFadeIn {
   from { opacity: 0; transform: translateY(15px); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes pageFadeOut {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-15px); }
 }
 
 /* ===== Ambient Background ===== */
@@ -1120,33 +1112,7 @@ body {
   }
 }
 
-/* ===== View Transitions API (Page Navigation Animation) ===== */
-@view-transition {
-  navigation: auto;
-}
 
-::view-transition-group(root) {
-  animation-duration: 0.4s;
-  animation-timing-function: var(--transition-smooth);
-}
-
-::view-transition-old(root) {
-  animation: fade-out 0.4s var(--transition-smooth);
-}
-
-::view-transition-new(root) {
-  animation: fade-in 0.4s var(--transition-smooth);
-}
-
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(15px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes fade-out {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-15px); }
-}
 
 /* ===== Floating Bookmark Button ===== */
 .fab-bookmark {

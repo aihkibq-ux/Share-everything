@@ -247,28 +247,19 @@ document.addEventListener("mousedown", (e) => {
 /* ===== SPA Router — 单页应用导航 ===== */
 const SPARouter = (() => {
   let isNavigating = false;
-  let notionLoaded = !!window.NotionAPI;
-  let bookmarkLoaded = !!window.BookmarkManager;
+  const loadedScripts = new Set();
   const pageCache = {};
   const prefetched = new Set();
 
-  function ensureNotionAPI() {
-    if (notionLoaded || window.NotionAPI) { notionLoaded = true; return Promise.resolve(); }
+  function ensureScript(src) {
+    if (loadedScripts.has(src) || document.querySelector(`script[src="${src}"]`)) {
+      loadedScripts.add(src);
+      return Promise.resolve();
+    }
     return new Promise((resolve, reject) => {
       const s = document.createElement("script");
-      s.src = "js/notion-api.js";
-      s.onload = () => { notionLoaded = true; resolve(); };
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
-  }
-
-  function ensureBookmarkJS() {
-    if (bookmarkLoaded || window.BookmarkManager) { bookmarkLoaded = true; return Promise.resolve(); }
-    return new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = "js/bookmark.js";
-      s.onload = () => { bookmarkLoaded = true; resolve(); };
+      s.src = src;
+      s.onload = () => { loadedScripts.add(src); resolve(); };
       s.onerror = reject;
       document.head.appendChild(s);
     });
@@ -304,8 +295,8 @@ const SPARouter = (() => {
       if (!newContent) { isNavigating = false; window.location.href = url; return; }
 
       // 按需加载依赖脚本
-      if (doc.querySelector('script[src*="notion-api"]')) await ensureNotionAPI();
-      if (doc.querySelector('script[src*="bookmark"]')) await ensureBookmarkJS();
+      const extScripts = doc.querySelectorAll('script[src]:not([src*="common"])');
+      for (const s of extScripts) await ensureScript(s.getAttribute('src'));
 
       // ④ 先更新 URL（让页面脚本能读到正确的 location）
       if (pushState) history.pushState(null, "", url);
@@ -330,8 +321,9 @@ const SPARouter = (() => {
       const inlineScripts = doc.querySelectorAll("script:not([src])");
       inlineScripts.forEach(s => {
         const code = s.textContent || "";
-        // 跳过空脚本和 common.js 中的定义脚本（而非调用脚本）
-        if (!code.trim() || code.includes("const SPARouter") || code.includes("animateParticles")) return;
+        if (!code.trim()) return;
+        // 跳过 common.js 相关定义脚本
+        if (code.includes("const SPARouter") || code.includes("class Particle")) return;
         try {
           const el = document.createElement("script");
           el.textContent = `(function(){${code}})()`;

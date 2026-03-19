@@ -183,7 +183,6 @@ const NotionAPI = (() => {
       随想: "linear-gradient(135deg, #1a0a3b, #3d1a7e)",
       教程: "linear-gradient(135deg, #0a2e1a, #1a5c35)",
       工具: "linear-gradient(135deg, #2e1a00, #5c3800)",
-      收藏: "linear-gradient(135deg, #2e2a00, #5c5200)",
     };
     return map[category] || "linear-gradient(135deg, #1a1a2e, #16213e)";
   }
