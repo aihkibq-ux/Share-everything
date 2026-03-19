@@ -41,6 +41,12 @@ body {
   -webkit-user-select: none;
 }
 
+/* SPA Content Container */
+#spa-content {
+  position: relative;
+  z-index: 10;
+}
+
 .page-transition-wrapper {
   animation: pageFadeIn 0.5s var(--transition-smooth) forwards;
   min-height: 100vh;

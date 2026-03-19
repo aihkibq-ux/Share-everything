@@ -31,6 +31,7 @@
     <canvas id="particles-canvas"></canvas>
 
     <!-- Content -->
+    <main id="spa-content">
     <div class="content-layer">
       <!-- Hero -->
       <section class="hero-section" id="hero">
@@ -107,6 +108,7 @@
 
 
     </div>
+    </main>
 
     <script src="js/common.js"></script>
     <script>
@@ -117,7 +119,7 @@
       function executeSearch() {
         const query = searchInput.value.trim();
         if (query) {
-          window.location.href = `blog.html?search=${encodeURIComponent(query)}`;
+          SPARouter.navigate(`blog.html?search=${encodeURIComponent(query)}`);
         }
       }
 
@@ -128,13 +130,13 @@
 
       /* ===== Button Routes ===== */
       document.getElementById("ctaHome").addEventListener("click", () => {
-        window.location.href = "blog.html";
+        SPARouter.navigate("blog.html");
       });
       document.getElementById("ctaStart").addEventListener("click", () => {
-        window.location.href = "blog.html?category=精选";
+        SPARouter.navigate("blog.html?category=精选");
       });
       document.getElementById("ctaWiki").addEventListener("click", () => {
-        window.location.href = "blog.html?category=收藏";
+        SPARouter.navigate("blog.html?category=收藏");
       });
     </script>
   </body>

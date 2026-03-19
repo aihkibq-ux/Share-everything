@@ -246,55 +246,144 @@ document.addEventListener("mousedown", (e) => {
   }
 });
 
-/* ===== 路由跳转平滑动画 & 预加载 ===== */
-document.addEventListener("DOMContentLoaded", () => {
-  // 1. 拦截站内链接，添加淡出动画
-  document.body.addEventListener("click", (e) => {
-    const link = e.target.closest("a");
-    if (!link || !link.href) return;
-    
-    // 只拦截当前域名的内部链接，且不是新标签页
-    if (link.target !== "_blank" && link.href.startsWith(window.location.origin)) {
-      // 忽略仅 hash 的变化 (锚点)
-      const url = new URL(link.href);
-      if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash !== window.location.hash) {
-        return; 
+/* ===== SPA Router — 单页应用导航 ===== */
+const SPARouter = (() => {
+  let isNavigating = false;
+  let notionLoaded = !!window.NotionAPI;
+  const pageCache = {};
+  const prefetched = new Set();
+
+  function ensureNotionAPI() {
+    if (notionLoaded || window.NotionAPI) { notionLoaded = true; return Promise.resolve(); }
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "js/notion-api.js";
+      s.onload = () => { notionLoaded = true; resolve(); };
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  async function navigate(url, pushState = true) {
+    if (isNavigating) return;
+    isNavigating = true;
+
+    const content = document.getElementById("spa-content");
+    if (!content) { isNavigating = false; window.location.href = url; return; }
+
+    // ① 淡出
+    content.style.transition = "opacity 0.15s ease, transform 0.15s ease";
+    content.style.opacity = "0";
+    content.style.transform = "translateY(-8px)";
+
+    try {
+      // ② 获取页面（优先使用缓存）
+      let html = pageCache[url];
+      if (!html) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        html = await res.text();
       }
-      
-      e.preventDefault();
-      const wrapper = document.getElementById("pageWrapper");
-      if (wrapper) {
-        wrapper.classList.add("page-fade-out");
-      } else {
-        document.body.classList.add("page-fade-out"); // fallback
-      }
+
+      // 等淡出动画完成
+      await new Promise(r => setTimeout(r, 150));
+
+      // ③ 解析并提取内容
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const newContent = doc.getElementById("spa-content");
+      if (!newContent) { isNavigating = false; window.location.href = url; return; }
+
+      // 按需加载 notion-api.js
+      if (doc.querySelector('script[src*="notion-api"]')) await ensureNotionAPI();
+
+      // ④ 先更新 URL（让页面脚本能读到正确的 location）
+      if (pushState) history.pushState(null, "", url);
+
+      // 更新标题和描述
+      document.title = doc.title || "Share Everything";
+      const nd = doc.querySelector('meta[name="description"]');
+      const cd = document.querySelector('meta[name="description"]');
+      if (nd && cd) cd.content = nd.content;
+
+      // ⑤ 替换内容
+      content.innerHTML = newContent.innerHTML;
+
+      // 禁用内部的入场动画（避免与 SPA 过渡重叠）
+      content.querySelectorAll(".page-transition-wrapper").forEach(el => el.style.animation = "none");
+      content.querySelectorAll(".top-actions").forEach(el => {
+        el.style.animation = "none";
+        el.style.opacity = "1";
+        el.style.transform = "none";
+      });
+
+      // ⑥ 执行页面脚本
+      doc.querySelectorAll("body > script:not([src])").forEach(s => {
+        const el = document.createElement("script");
+        el.textContent = s.textContent;
+        document.body.appendChild(el);
+        document.body.removeChild(el);
+      });
+
+      // ⑦ 滚动到顶部
+      window.scrollTo({ top: 0, behavior: "instant" });
+
+      // 尽早解锁，允许下一次导航
+      isNavigating = false;
+
+      // ⑧ 淡入
+      content.style.transform = "translateY(12px)";
+      void content.offsetHeight;
+      content.style.transition = "opacity 0.25s ease, transform 0.25s var(--transition-smooth)";
+      content.style.opacity = "1";
+      content.style.transform = "translateY(0)";
+
       setTimeout(() => {
-        window.location.href = link.href;
-      }, 200); // 与 CSS 动画时长匹配
+        content.style.transition = "";
+        content.style.opacity = "";
+        content.style.transform = "";
+      }, 300);
+
+    } catch (err) {
+      console.error("SPA navigation failed, falling back:", err);
+      isNavigating = false;
+      window.location.href = url;
+      return;
+    } finally {
+      isNavigating = false;
     }
+  }
+
+  // 拦截站内链接点击
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest("a");
+    if (!link || !link.href || link.target === "_blank") return;
+    if (!link.href.startsWith(window.location.origin)) return;
+    const u = new URL(link.href), c = new URL(window.location.href);
+    if (u.pathname === c.pathname && u.search === c.search && u.hash) return;
+    e.preventDefault();
+    navigate(link.href);
   });
 
-  // 2. 鼠标悬停文章卡片时自动预加载数据
-  document.body.addEventListener("mouseover", (e) => {
+  // 浏览器前进/后退
+  window.addEventListener("popstate", () => navigate(window.location.href, false));
+
+  // 悬停预取页面 HTML + Notion 数据
+  document.addEventListener("mouseover", (e) => {
+    const link = e.target.closest("a");
+    if (link && link.href && link.href.startsWith(window.location.origin) && !prefetched.has(link.href)) {
+      prefetched.add(link.href);
+      fetch(link.href).then(r => r.text()).then(h => { pageCache[link.href] = h; }).catch(() => {});
+    }
+    // Notion 数据预加载
     const card = e.target.closest("a.blog-card");
-    if (card && card.href) {
-      if (!card.dataset.preloaded) {
-        card.dataset.preloaded = "true";
-        const url = new URL(card.href);
-        const id = url.searchParams.get("id");
-        if (id && window.NotionAPI && NotionAPI.getPost) {
-          // 静默预压入 sessionStorage 缓存中
-          NotionAPI.getPost(id).catch(() => {});
-        }
-      }
+    if (card && card.href && !card.dataset.preloaded) {
+      card.dataset.preloaded = "true";
+      const id = new URL(card.href).searchParams.get("id");
+      if (id && window.NotionAPI && NotionAPI.getPost) NotionAPI.getPost(id).catch(() => {});
     }
   });
-});
 
-// 3. 处理浏览器的后退/前进缓存 (BFCache)
-window.addEventListener("pageshow", (e) => {
-  // 如果页面是从缓存中加载的 (或者有些浏览器总是触发)，确保移除淡出类
-  const wrapper = document.getElementById("pageWrapper");
-  if (wrapper) wrapper.classList.remove("page-fade-out");
-  document.body.classList.remove("page-fade-out"); // fallback
-});
+  history.replaceState(null, "", window.location.href);
+  return { navigate };
+})();
+window.SPARouter = SPARouter;
