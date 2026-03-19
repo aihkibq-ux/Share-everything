@@ -280,7 +280,7 @@ const SPARouter = (() => {
       // ② 获取页面（优先使用缓存）
       let html = pageCache[url];
       if (!html) {
-        const res = await fetch(url);
+        const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         html = await res.text();
       }
@@ -316,12 +316,18 @@ const SPARouter = (() => {
         el.style.transform = "none";
       });
 
-      // ⑥ 执行页面脚本
-      doc.querySelectorAll("body > script:not([src])").forEach(s => {
-        const el = document.createElement("script");
-        el.textContent = s.textContent;
-        document.body.appendChild(el);
-        document.body.removeChild(el);
+      const inlineScripts = doc.querySelectorAll("script:not([src])");
+      inlineScripts.forEach(s => {
+        const code = s.textContent || "";
+        // 跳过空脚本和 common.js 中的定义脚本（而非调用脚本）
+        if (!code.trim() || code.includes("const SPARouter") || code.includes("animateParticles")) return;
+        try {
+          const el = document.createElement("script");
+          el.textContent = code;
+          document.body.appendChild(el);
+        } catch (e) {
+          console.error("SPA script execution error:", e);
+        }
       });
 
       // ⑦ 滚动到顶部
