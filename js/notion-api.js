@@ -18,7 +18,6 @@ const NotionAPI = (() => {
     { name: "随想", emoji: "💭", color: "purple" },
     { name: "教程", emoji: "📖", color: "green" },
     { name: "工具", emoji: "🔧", color: "orange" },
-    { name: "收藏", emoji: "⭐", color: "orange" },
   ];
 
   // ====== 缓存工具 ======

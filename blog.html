@@ -106,6 +106,7 @@
 
     <script src="js/common.js"></script>
     <script src="js/notion-api.js"></script>
+    <script src="js/bookmark.js"></script>
     <script>
       /* ===== State ===== */
       let currentCategory = "全部";
@@ -190,7 +191,7 @@
 
           // "收藏" 分类 → 显示本地收藏的文章
           if (currentCategory === "收藏") {
-            let bookmarks = getBookmarks();
+            let bookmarks = BookmarkManager.getAll();
             // 搜索过滤
             if (currentSearch) {
               const q = currentSearch.toLowerCase();
@@ -241,7 +242,7 @@
       function renderCard(post) {
         const esc = NotionAPI.escapeHtml;
         const catColor = NotionAPI.getCategoryColor(post.category);
-        const bookmarked = isBookmarked(post.id);
+        const bookmarked = BookmarkManager.isBookmarked(post.id);
 
         const safeTitle = esc(post.title);
         const safeExcerpt = esc(post.excerpt);
@@ -319,7 +320,7 @@
         if (currentSearch) params.set("search", currentSearch);
         if (currentPage > 1) params.set("page", currentPage);
         const qs = params.toString();
-        history.replaceState(null, "", qs ? `?${qs}` : "blog.html");
+        history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
       }
 
       /* ===== Reading History (localStorage) ===== */
@@ -340,55 +341,7 @@
         }
       }
 
-      /* ===== Bookmark (收藏) ===== */
-      const BOOKMARK_KEY = "bookmarked_posts";
-
-      function getBookmarks() {
-        try {
-          return JSON.parse(localStorage.getItem(BOOKMARK_KEY) || "[]");
-        } catch (e) { return []; }
-      }
-
-      function isBookmarked(id) {
-        return getBookmarks().some(b => b.id === id);
-      }
-
-      function toggleBookmarkById(postId) {
-        let bookmarks = getBookmarks();
-        const exists = bookmarks.some(b => b.id === postId);
-        if (exists) {
-          bookmarks = bookmarks.filter(b => b.id !== postId);
-        } else {
-          // 从当前渲染的数据中找到 post 信息
-          const card = document.querySelector(`[data-post-id="${postId}"]`);
-          if (card) {
-            const title = card.querySelector('.blog-card-title')?.textContent || '';
-            const excerpt = card.querySelector('.blog-card-excerpt')?.textContent || '';
-            const category = card.querySelector('.blog-card-category')?.textContent || '';
-            const metaSpans = card.querySelectorAll('.blog-card-meta > span');
-            const date = metaSpans[0]?.textContent?.trim() || '';
-            const readTime = metaSpans[1]?.textContent?.trim() || '';
-            const img = card.querySelector('.blog-card-cover-img img');
-            const emoji = card.querySelector('.blog-card-cover-placeholder:not(.blog-card-cover-img) span');
-            bookmarks.unshift({
-              id: postId,
-              title,
-              excerpt,
-              category,
-              date,
-              readTime,
-              coverImage: img?.src || null,
-              coverEmoji: emoji?.textContent || '📝',
-              coverGradient: null,
-              timestamp: Date.now(),
-            });
-          }
-        }
-        try {
-          localStorage.setItem(BOOKMARK_KEY, JSON.stringify(bookmarks));
-        } catch (e) {}
-        return !exists;
-      }
+      /* ===== Bookmark (收藏 — via BookmarkManager) ===== */
 
       // 事件委托：处理卡片上的收藏按钮点击
       gridEl.addEventListener('click', (e) => {
@@ -398,7 +351,7 @@
         e.stopPropagation();
 
         const postId = btn.dataset.bookmarkId;
-        const nowBookmarked = toggleBookmarkById(postId);
+        const nowBookmarked = BookmarkManager.toggleById(postId);
 
         btn.classList.toggle('bookmarked', nowBookmarked);
         btn.title = nowBookmarked ? '取消收藏' : '收藏';

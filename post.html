@@ -61,7 +61,7 @@
     <div class="post-container">
       <article class="post-article" id="postArticle">
         <!-- Back -->
-        <button class="post-back" id="postBack" onclick="history.back()">
+        <button class="post-back" id="postBack" onclick="SPARouter.navigate('blog.html')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="19" y1="12" x2="5" y2="12"></line>
             <polyline points="12 19 5 12 12 5"></polyline>
@@ -109,6 +109,7 @@
 
     <script src="js/common.js"></script>
     <script src="js/notion-api.js"></script>
+    <script src="js/bookmark.js"></script>
     <script>
       /* ===== Load Post ===== */
       const params = new URLSearchParams(window.location.search);
@@ -215,46 +216,7 @@
         }
       }
 
-      /* ===== Bookmark (收藏) ===== */
-      const BOOKMARK_KEY = "bookmarked_posts";
-
-      function getBookmarks() {
-        try {
-          return JSON.parse(localStorage.getItem(BOOKMARK_KEY) || "[]");
-        } catch (e) { return []; }
-      }
-
-      function isBookmarked(id) {
-        return getBookmarks().some(b => b.id === id);
-      }
-
-      function toggleBookmark(post) {
-        let bookmarks = getBookmarks();
-        const exists = bookmarks.some(b => b.id === post.id);
-
-        if (exists) {
-          bookmarks = bookmarks.filter(b => b.id !== post.id);
-        } else {
-          bookmarks.unshift({
-            id: post.id,
-            title: post.title,
-            category: post.category,
-            excerpt: post.excerpt || "",
-            date: post.date || "",
-            readTime: post.readTime || "",
-            coverImage: post.coverImage || null,
-            coverEmoji: post.coverEmoji || "📝",
-            coverGradient: post.coverGradient || null,
-            timestamp: Date.now(),
-          });
-        }
-
-        try {
-          localStorage.setItem(BOOKMARK_KEY, JSON.stringify(bookmarks));
-        } catch (e) {}
-
-        return !exists; // return new state
-      }
+      /* ===== Bookmark (收藏 — via BookmarkManager) ===== */
 
       function initBookmark(post) {
         const fab = document.getElementById("fabBookmark");
@@ -262,13 +224,13 @@
         fab.style.display = "flex";
 
         // Set initial state
-        if (isBookmarked(post.id)) {
+        if (BookmarkManager.isBookmarked(post.id)) {
           fab.classList.add("bookmarked");
           label.textContent = "已收藏";
         }
 
         fab.addEventListener("click", () => {
-          const nowBookmarked = toggleBookmark(post);
+          const nowBookmarked = BookmarkManager.toggle(post);
 
           // Update UI
           fab.classList.toggle("bookmarked", nowBookmarked);

@@ -169,12 +169,10 @@ window.addEventListener("resize", () => {
   }, 300);
 });
 
-// Smooth hyper-drive burst
-window.addEventListener("mousedown", () => (targetSpeedMultiplier = 20));
-window.addEventListener("mouseup", () => (targetSpeedMultiplier = 1));
-window.addEventListener("mouseleave", () => (targetSpeedMultiplier = 1));
-window.addEventListener("touchstart", () => (targetSpeedMultiplier = 20));
-window.addEventListener("touchend", () => (targetSpeedMultiplier = 1));
+// Smooth hyper-drive burst (mouse only — avoid touch-scroll conflict)
+window.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse") targetSpeedMultiplier = 20; });
+window.addEventListener("pointerup", (e) => { if (e.pointerType === "mouse") targetSpeedMultiplier = 1; });
+window.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") targetSpeedMultiplier = 1; });
 
 resize();
 initParticles();
@@ -250,6 +248,7 @@ document.addEventListener("mousedown", (e) => {
 const SPARouter = (() => {
   let isNavigating = false;
   let notionLoaded = !!window.NotionAPI;
+  let bookmarkLoaded = !!window.BookmarkManager;
   const pageCache = {};
   const prefetched = new Set();
 
@@ -259,6 +258,17 @@ const SPARouter = (() => {
       const s = document.createElement("script");
       s.src = "js/notion-api.js";
       s.onload = () => { notionLoaded = true; resolve(); };
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  function ensureBookmarkJS() {
+    if (bookmarkLoaded || window.BookmarkManager) { bookmarkLoaded = true; return Promise.resolve(); }
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "js/bookmark.js";
+      s.onload = () => { bookmarkLoaded = true; resolve(); };
       s.onerror = reject;
       document.head.appendChild(s);
     });
@@ -293,8 +303,9 @@ const SPARouter = (() => {
       const newContent = doc.getElementById("spa-content");
       if (!newContent) { isNavigating = false; window.location.href = url; return; }
 
-      // 按需加载 notion-api.js
+      // 按需加载依赖脚本
       if (doc.querySelector('script[src*="notion-api"]')) await ensureNotionAPI();
+      if (doc.querySelector('script[src*="bookmark"]')) await ensureBookmarkJS();
 
       // ④ 先更新 URL（让页面脚本能读到正确的 location）
       if (pushState) history.pushState(null, "", url);
@@ -323,8 +334,9 @@ const SPARouter = (() => {
         if (!code.trim() || code.includes("const SPARouter") || code.includes("animateParticles")) return;
         try {
           const el = document.createElement("script");
-          el.textContent = code;
+          el.textContent = `(function(){${code}})()`;
           document.body.appendChild(el);
+          el.remove(); // 执行后清理 DOM 节点
         } catch (e) {
           console.error("SPA script execution error:", e);
         }
