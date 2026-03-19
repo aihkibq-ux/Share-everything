@@ -5,7 +5,7 @@
 const NotionAPI = (() => {
   // ====== 配置 ======
   const CONFIG = {
-    workerUrl: "https://api.0000068.xyz/v1",
+    workerUrl: "/api",
     databaseId: "32485b780a2580eaa67ecf051676d693",
     pageSize: 9,
   };
