@@ -561,6 +561,7 @@ body {
   }
 
   .hero-section {
+    width: 100%;
     min-height: 100svh;
     padding: 92px 0 44px;
     gap: 20px;
@@ -575,7 +576,8 @@ body {
   }
 
   .hero-search {
-    max-width: 430px;
+    width: min(92vw, 430px);
+    max-width: none;
   }
 
   .hero-search input,
@@ -1665,6 +1667,7 @@ body {
   }
 
   .hero-section {
+    width: 100%;
     padding-top: 84px;
     gap: 17px;
   }
@@ -1675,7 +1678,8 @@ body {
   }
 
   .hero-search {
-    max-width: 100%;
+    width: min(94vw, 360px);
+    max-width: none;
   }
 
   .hero-search input {
