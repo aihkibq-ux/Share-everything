@@ -10,12 +10,31 @@
  */
 
 const NOTION_BASE = "https://api.notion.com/v1";
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://www.0000068.xyz",
+  "https://0000068.xyz",
+];
+
+function getAllowedOrigins() {
+  const configured = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return configured.length > 0 ? configured : DEFAULT_ALLOWED_ORIGINS;
+}
 
 module.exports = async function handler(req, res) {
-  // CORS 头 — 仅允许自己的域名
-  const allowedOrigin = req.headers.origin === "https://www.0000068.xyz"
-    ? "https://www.0000068.xyz"
-    : "https://0000068.xyz";
+  const allowedOrigins = getAllowedOrigins();
+  const requestOrigin = req.headers.origin || "";
+  const allowAnyOrigin = allowedOrigins.includes("*");
+  const allowedOrigin = allowAnyOrigin
+    ? "*"
+    : allowedOrigins.includes(requestOrigin)
+      ? requestOrigin
+      : allowedOrigins[0];
+
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -55,8 +74,9 @@ module.exports = async function handler(req, res) {
     };
 
     // 只有非 GET/HEAD 请求才发送 body
-    if (!["GET", "HEAD"].includes(req.method)) {
-      fetchOptions.body = JSON.stringify(req.body);
+    if (!["GET", "HEAD"].includes(req.method) && req.body != null) {
+      fetchOptions.body =
+        typeof req.body === "string" ? req.body : JSON.stringify(req.body);
     }
 
     const notionRes = await fetch(notionUrl, fetchOptions);

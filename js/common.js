@@ -328,33 +328,173 @@ document.addEventListener("mousedown", (e) => {
   }
 });
 
+/* ===== Page Runtime ===== */
+const PageRuntime = (() => {
+  const registry = new Map();
+  let currentCleanup = null;
+
+  function getPageIdFromUrl(url = window.location.href) {
+    const { pathname } = new URL(url, window.location.origin);
+    const normalizedPath =
+      pathname === "/" ? "/index.html" : pathname.endsWith("/") ? `${pathname}index.html` : pathname;
+
+    if (normalizedPath.endsWith("/index.html")) return "index";
+    if (normalizedPath.endsWith("/blog.html")) return "blog";
+    if (normalizedPath.endsWith("/post.html")) return "post";
+    return null;
+  }
+
+  function cleanupCurrentPage() {
+    if (typeof currentCleanup !== "function") {
+      currentCleanup = null;
+      return;
+    }
+
+    try {
+      currentCleanup();
+    } catch (error) {
+      console.error("Page cleanup error:", error);
+    } finally {
+      currentCleanup = null;
+    }
+  }
+
+  function initializePage(pageId = getPageIdFromUrl(window.location.href)) {
+    cleanupCurrentPage();
+
+    if (document.body) {
+      document.body.dataset.page = pageId || "";
+    }
+
+    const pageModule = pageId ? registry.get(pageId) : null;
+    if (!pageModule?.init) return null;
+
+    try {
+      currentCleanup = pageModule.init() || null;
+    } catch (error) {
+      currentCleanup = null;
+      console.error(`Page init error (${pageId || "unknown"}):`, error);
+    }
+
+    return currentCleanup;
+  }
+
+  function register(pageId, pageModule) {
+    registry.set(pageId, pageModule);
+
+    if (pageId === getPageIdFromUrl(window.location.href)) {
+      initializePage(pageId);
+    }
+  }
+
+  return {
+    getPageIdFromUrl,
+    initializeCurrentPage: () => initializePage(getPageIdFromUrl(window.location.href)),
+    initializePage,
+    cleanupCurrentPage,
+    register,
+  };
+})();
+window.PageRuntime = PageRuntime;
+
 /* ===== SPA Router — 单页应用导航 ===== */
 const SPARouter = (() => {
-  let isNavigating = false;
+  let navigationToken = 0;
+  let activeNavigationController = null;
   const loadedScripts = new Set();
-  const pageCache = {};
+  const pageCache = new Map();
   const prefetched = new Set();
 
+  function resolveUrl(url) {
+    return new URL(url, window.location.href);
+  }
+
+  function getRouteKey(url) {
+    const resolved = resolveUrl(url);
+    resolved.hash = "";
+    return resolved.href;
+  }
+
+  function getPageCacheKey(url) {
+    const resolved = resolveUrl(url);
+    resolved.hash = "";
+
+    if (PageRuntime.getPageIdFromUrl(resolved.href)) {
+      resolved.search = "";
+    }
+
+    return resolved.href;
+  }
+
   function ensureScript(src) {
-    if (loadedScripts.has(src) || document.querySelector(`script[src="${src}"]`)) {
-      loadedScripts.add(src);
+    const resolvedSrc = resolveUrl(src).href;
+    const hasLoadedScript =
+      loadedScripts.has(resolvedSrc) ||
+      Array.from(document.scripts).some((script) => script.src === resolvedSrc);
+
+    if (hasLoadedScript) {
+      loadedScripts.add(resolvedSrc);
       return Promise.resolve();
     }
+
     return new Promise((resolve, reject) => {
       const s = document.createElement("script");
-      s.src = src;
-      s.onload = () => { loadedScripts.add(src); resolve(); };
+      s.src = resolvedSrc;
+      s.onload = () => {
+        loadedScripts.add(resolvedSrc);
+        resolve();
+      };
       s.onerror = reject;
       document.head.appendChild(s);
     });
   }
 
-  async function navigate(url, pushState = true) {
-    if (isNavigating) return;
-    isNavigating = true;
+  async function fetchPageHtml(url, { signal } = {}) {
+    const routeKey = getRouteKey(url);
+    const cacheKey = getPageCacheKey(routeKey);
+    const cachedHtml = pageCache.get(cacheKey);
+    if (cachedHtml) return cachedHtml;
 
+    const response = await fetch(routeKey, {
+      cache: "no-store",
+      signal,
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const html = await response.text();
+    pageCache.set(cacheKey, html);
+    return html;
+  }
+
+  function warmPage(url) {
+    const cacheKey = getPageCacheKey(url);
+    if (prefetched.has(cacheKey) || pageCache.has(cacheKey)) return;
+
+    prefetched.add(cacheKey);
+    fetchPageHtml(url).catch(() => {
+      prefetched.delete(cacheKey);
+    });
+  }
+
+  async function navigate(url, pushState = true) {
     const content = document.getElementById("spa-content");
-    if (!content) { isNavigating = false; window.location.href = url; return; }
+    if (!content) {
+      window.location.href = url;
+      return;
+    }
+
+    const targetUrl = resolveUrl(url);
+    const currentRouteKey = getRouteKey(window.location.href);
+    const targetRouteKey = getRouteKey(targetUrl.href);
+    if (pushState && targetRouteKey === currentRouteKey) return;
+
+    const targetPageId = PageRuntime.getPageIdFromUrl(targetRouteKey);
+    const currentToken = ++navigationToken;
+
+    activeNavigationController?.abort();
+    activeNavigationController = new AbortController();
+
+    PageRuntime.cleanupCurrentPage();
 
     // ① 淡出
     content.style.transition = "opacity 0.15s ease, transform 0.15s ease";
@@ -363,27 +503,37 @@ const SPARouter = (() => {
 
     try {
       // ② 获取页面（优先使用缓存）
-      let html = pageCache[url];
-      if (!html) {
-        const res = await fetch(url, { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        html = await res.text();
-      }
+      const html = await fetchPageHtml(targetRouteKey, {
+        signal: activeNavigationController.signal,
+      });
+      if (currentToken !== navigationToken) return;
 
       // 等淡出动画完成
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      if (currentToken !== navigationToken) return;
 
       // ③ 解析并提取内容
       const doc = new DOMParser().parseFromString(html, "text/html");
       const newContent = doc.getElementById("spa-content");
-      if (!newContent) { isNavigating = false; window.location.href = url; return; }
+      if (!newContent) {
+        window.location.href = targetRouteKey;
+        return;
+      }
 
       // 按需加载依赖脚本
       const extScripts = doc.querySelectorAll('script[src]:not([src*="common"])');
-      for (const s of extScripts) await ensureScript(s.getAttribute('src'));
+      for (const s of extScripts) {
+        const scriptSrc = s.getAttribute("src");
+        if (scriptSrc) {
+          await ensureScript(scriptSrc);
+        }
+      }
+      if (currentToken !== navigationToken) return;
 
       // ④ 先更新 URL（让页面脚本能读到正确的 location）
-      if (pushState) history.pushState(null, "", url);
+      if (pushState) {
+        history.pushState(null, "", targetUrl.href);
+      }
 
       // 更新标题和描述
       document.title = doc.title || "Share Everything";
@@ -402,27 +552,10 @@ const SPARouter = (() => {
         el.style.transform = "none";
       });
 
-      const inlineScripts = doc.querySelectorAll("script:not([src])");
-      inlineScripts.forEach(s => {
-        const code = s.textContent || "";
-        if (!code.trim()) return;
-        // 跳过 common.js 相关定义脚本
-        if (code.includes("const SPARouter") || code.includes("class Particle")) return;
-        try {
-          const el = document.createElement("script");
-          el.textContent = `(function(){${code}})()`;
-          document.body.appendChild(el);
-          el.remove(); // 执行后清理 DOM 节点
-        } catch (e) {
-          console.error("SPA script execution error:", e);
-        }
-      });
+      PageRuntime.initializePage(targetPageId);
 
       // ⑦ 滚动到顶部
       window.scrollTo({ top: 0, behavior: "auto" });
-
-      // 尽早解锁，允许下一次导航
-      isNavigating = false;
 
       // ⑧ 淡入
       content.style.transform = "translateY(12px)";
@@ -438,24 +571,35 @@ const SPARouter = (() => {
       }, 300);
 
     } catch (err) {
+      if (err?.name === "AbortError" || currentToken !== navigationToken) {
+        return;
+      }
       console.error("SPA navigation failed, falling back:", err);
-      isNavigating = false;
-      window.location.href = url;
+      window.location.href = targetRouteKey;
       return;
     } finally {
-      isNavigating = false;
+      if (currentToken === navigationToken) {
+        activeNavigationController = null;
+      }
     }
   }
 
   // 拦截站内链接点击
   document.addEventListener("click", (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+      return;
+    }
+
     const link = e.target.closest("a");
-    if (!link || !link.href || link.target === "_blank") return;
-    if (!link.href.startsWith(window.location.origin)) return;
-    const u = new URL(link.href), c = new URL(window.location.href);
+    if (!link || !link.href || link.target === "_blank" || link.hasAttribute("download")) return;
+
+    const u = resolveUrl(link.href);
+    const c = resolveUrl(window.location.href);
+    if (u.origin !== c.origin) return;
     if (u.pathname === c.pathname && u.search === c.search && u.hash) return;
+
     e.preventDefault();
-    navigate(link.href);
+    navigate(u.href);
   });
 
   // 浏览器前进/后退
@@ -464,9 +608,8 @@ const SPARouter = (() => {
   // 悬停预取页面 HTML + Notion 数据
   document.addEventListener("mouseover", (e) => {
     const link = e.target.closest("a");
-    if (link && link.href && link.href.startsWith(window.location.origin) && !prefetched.has(link.href)) {
-      prefetched.add(link.href);
-      fetch(link.href).then(r => r.text()).then(h => { pageCache[link.href] = h; }).catch(() => {});
+    if (link && link.href && link.href.startsWith(window.location.origin)) {
+      warmPage(link.href);
     }
     // Notion 数据预加载
     const card = e.target.closest("a.blog-card");
@@ -474,6 +617,13 @@ const SPARouter = (() => {
       card.dataset.preloaded = "true";
       const id = new URL(card.href).searchParams.get("id");
       if (id && window.NotionAPI && NotionAPI.getPost) NotionAPI.getPost(id).catch(() => {});
+    }
+  });
+
+  document.addEventListener("focusin", (e) => {
+    const link = e.target.closest?.("a");
+    if (link && link.href && link.href.startsWith(window.location.origin)) {
+      warmPage(link.href);
     }
   });
 

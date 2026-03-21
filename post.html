@@ -17,7 +17,7 @@
       media="print" onload="this.media='all'"
     />
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.cn/css2?family=Inter:wght@300;400;500;600;700&family=Google+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" /></noscript>
-    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="icon" type="image/png" href="favicon.png?v=2" />
     <link rel="stylesheet" href="css/style.css" />
   </head>
   <body>
@@ -66,7 +66,7 @@
     <div class="post-container">
       <article class="post-article" id="postArticle">
         <!-- Back -->
-        <button class="post-back" id="postBack" onclick="SPARouter.navigate('blog.html')">
+        <button class="post-back" id="postBack" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="19" y1="12" x2="5" y2="12"></line>
             <polyline points="12 19 5 12 12 5"></polyline>
@@ -115,141 +115,6 @@
     <script src="js/common.js"></script>
     <script src="js/notion-api.js"></script>
     <script src="js/bookmark.js"></script>
-    <script>
-      /* ===== Load Post ===== */
-      const params = new URLSearchParams(window.location.search);
-      const postId = params.get("id");
-
-      const skeletonEl = document.getElementById("postSkeleton");
-      const contentEl = document.getElementById("postContent");
-      const emptyEl = document.getElementById("postEmpty");
-      const articleEl = document.getElementById("postArticle");
-
-      async function loadPost() {
-        if (!postId) {
-          showEmpty();
-          return;
-        }
-
-        try {
-          const post = await NotionAPI.getPost(postId);
-
-          if (!post) {
-            showEmpty();
-            return;
-          }
-
-          // Update page title
-          document.title = `${post.title} — Share Everything`;
-          document.querySelector('meta[name="description"]').content = post.excerpt || post.title;
-
-          // Category color
-          const catColor = NotionAPI.getCategoryColor(post.category);
-          const esc = NotionAPI.escapeHtml;
-
-          // Render post
-          const renderedContent = NotionAPI.renderBlocks(post.content || []);
-
-          contentEl.innerHTML = `
-            <div class="post-header">
-              <div class="post-category" style="background: ${catColor.bg}; color: ${catColor.color}; border: 1px solid ${catColor.border};">
-                ${esc(post.category)}
-              </div>
-              <h1 class="post-title">${esc(post.title)}</h1>
-              <div class="post-meta">
-                <span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                    <line x1="16" y1="2" x2="16" y2="6"></line>
-                    <line x1="8" y1="2" x2="8" y2="6"></line>
-                    <line x1="3" y1="10" x2="21" y2="10"></line>
-                  </svg>
-                  ${esc(post.date)}
-                </span>
-                <span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <polyline points="12 6 12 12 16 14"></polyline>
-                  </svg>
-                  ${esc(post.readTime)}
-                </span>
-                ${post.tags ? `<span>${post.tags.map(t => `#${esc(t)}`).join(" ")}</span>` : ""}
-              </div>
-            </div>
-            <div class="post-content">
-              ${renderedContent}
-            </div>
-          `;
-
-          // Show content, hide skeleton
-          skeletonEl.style.display = "none";
-          contentEl.style.display = "block";
-          contentEl.style.animation = "fadeInUp 0.6s ease both";
-
-          // Save reading history
-          saveReadingHistory(post);
-
-          // Show bookmark button
-          initBookmark(post);
-        } catch (error) {
-          console.error("Failed to load post:", error);
-          showEmpty();
-        }
-      }
-
-      function showEmpty() {
-        skeletonEl.style.display = "none";
-        articleEl.querySelector(".post-back").style.display = "none";
-        emptyEl.style.display = "flex";
-      }
-
-      /* ===== Reading History ===== */
-      function saveReadingHistory(post) {
-        try {
-          const entries = JSON.parse(localStorage.getItem("reading_history") || "[]");
-          // Remove duplicate
-          const filtered = entries.filter((h) => h.id !== post.id);
-          filtered.unshift({
-            id: post.id,
-            title: post.title,
-            category: post.category,
-            timestamp: Date.now(),
-          });
-          localStorage.setItem("reading_history", JSON.stringify(filtered.slice(0, 100)));
-        } catch (e) {
-          // localStorage not available
-        }
-      }
-
-      /* ===== Bookmark (收藏 — via BookmarkManager) ===== */
-
-      function initBookmark(post) {
-        const fab = document.getElementById("fabBookmark");
-        const label = fab.querySelector(".fab-bookmark-label");
-        fab.style.display = "flex";
-
-        // Set initial state
-        if (BookmarkManager.isBookmarked(post.id)) {
-          fab.classList.add("bookmarked");
-          label.textContent = "已收藏";
-        }
-
-        fab.addEventListener("click", () => {
-          const nowBookmarked = BookmarkManager.toggle(post);
-
-          // Update UI
-          fab.classList.toggle("bookmarked", nowBookmarked);
-          label.textContent = nowBookmarked ? "已收藏" : "收藏";
-
-          // Bounce animation
-          fab.classList.remove("bounce");
-          void fab.offsetWidth; // force reflow
-          fab.classList.add("bounce");
-        });
-      }
-
-      /* ===== Init ===== */
-      loadPost();
-    </script>
+    <script src="js/post-page.js"></script>
   </body>
 </html>

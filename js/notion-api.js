@@ -23,6 +23,7 @@ const NotionAPI = (() => {
   // ====== 缓存工具 ======
   const CACHE_TTL = 1000 * 60 * 30; // 30 分钟硬过期
   const STALE_TTL = 1000 * 60 * 5;  // 5 分钟后视为 stale，后台刷新
+  const pendingRequests = new Map();
 
   function getCache(key) {
     try {
@@ -36,6 +37,23 @@ const NotionAPI = (() => {
     try {
       sessionStorage.setItem(key, JSON.stringify({ timestamp: Date.now(), data }));
     } catch (e) {}
+  }
+
+  function withPendingRequest(key, loader) {
+    if (pendingRequests.has(key)) {
+      return pendingRequests.get(key);
+    }
+
+    const pending = Promise.resolve()
+      .then(loader)
+      .finally(() => {
+        if (pendingRequests.get(key) === pending) {
+          pendingRequests.delete(key);
+        }
+      });
+
+    pendingRequests.set(key, pending);
+    return pending;
   }
 
   // ====== Notion API 调用 ======
@@ -71,41 +89,43 @@ const NotionAPI = (() => {
   }
 
   async function fetchFromNotionRemote(category, cacheKey) {
-    const allPages = [];
-    let startCursor = null;
+    return withPendingRequest(cacheKey, async () => {
+      const allPages = [];
+      let startCursor = null;
 
-    do {
-      const body = {
-        page_size: 100,
-        sorts: [{ property: "Date", direction: "descending" }],
-      };
-
-      if (startCursor) body.start_cursor = startCursor;
-
-      if (category && category !== "全部") {
-        body.filter = {
-          property: "Category",
-          select: { equals: category },
+      do {
+        const body = {
+          page_size: 100,
+          sorts: [{ property: "Date", direction: "descending" }],
         };
-      }
 
-      const data = await requestJson(
-        `/databases/${CONFIG.databaseId}/query`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        },
-        { allow400AsEmpty: true },
-      );
+        if (startCursor) body.start_cursor = startCursor;
 
-      allPages.push(...data.results);
-      startCursor = data.has_more ? data.next_cursor : null;
-    } while (startCursor);
+        if (category && category !== "全部") {
+          body.filter = {
+            property: "Category",
+            select: { equals: category },
+          };
+        }
 
-    const mappedData = allPages.map(mapNotionPage);
-    setCache(cacheKey, mappedData);
-    return mappedData;
+        const data = await requestJson(
+          `/databases/${CONFIG.databaseId}/query`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+          { allow400AsEmpty: true },
+        );
+
+        allPages.push(...data.results);
+        startCursor = data.has_more ? data.next_cursor : null;
+      } while (startCursor);
+
+      const mappedData = allPages.map(mapNotionPage);
+      setCache(cacheKey, mappedData);
+      return mappedData;
+    });
   }
 
   async function liveQueryDatabase({ category, search, page = 1 }) {
@@ -146,33 +166,35 @@ const NotionAPI = (() => {
   }
 
   async function fetchPageRemote(pageId, cacheKey) {
-    async function fetchAllBlockChildren(blockId) {
-      const blocks = [];
-      let startCursor = null;
+    return withPendingRequest(cacheKey, async () => {
+      async function fetchAllBlockChildren(blockId) {
+        const blocks = [];
+        let startCursor = null;
 
-      do {
-        const qs = new URLSearchParams({ page_size: "100" });
-        if (startCursor) qs.set("start_cursor", startCursor);
-        const data = await requestJson(`/blocks/${blockId}/children?${qs.toString()}`);
-        blocks.push(...data.results);
-        startCursor = data.has_more ? data.next_cursor : null;
-      } while (startCursor);
+        do {
+          const qs = new URLSearchParams({ page_size: "100" });
+          if (startCursor) qs.set("start_cursor", startCursor);
+          const data = await requestJson(`/blocks/${blockId}/children?${qs.toString()}`);
+          blocks.push(...data.results);
+          startCursor = data.has_more ? data.next_cursor : null;
+        } while (startCursor);
 
-      return blocks;
-    }
+        return blocks;
+      }
 
-    const [pageRes, blocksRes] = await Promise.all([
-      requestJson(`/pages/${pageId}`),
-      fetchAllBlockChildren(pageId),
-    ]);
+      const [pageRes, blocksRes] = await Promise.all([
+        requestJson(`/pages/${pageId}`),
+        fetchAllBlockChildren(pageId),
+      ]);
 
-    const mappedData = {
-      ...mapNotionPage(pageRes),
-      content: blocksRes.map(mapNotionBlock),
-    };
+      const mappedData = {
+        ...mapNotionPage(pageRes),
+        content: blocksRes.map(mapNotionBlock),
+      };
 
-    setCache(cacheKey, mappedData);
-    return mappedData;
+      setCache(cacheKey, mappedData);
+      return mappedData;
+    });
   }
 
   // ====== 数据映射 ======

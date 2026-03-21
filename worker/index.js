@@ -38,9 +38,11 @@ export default {
     // ====== 边缘缓存 ======
     const body = ["GET", "HEAD"].includes(request.method) ? null : await request.text();
 
-    // 构造缓存 key：用 body 内容直接做 URL 参数（短 body 无需 SHA-256）
+    // 构造缓存 key：避免把原始 body 直接拼进 URL
     const cacheUrl = new URL(request.url);
-    if (body) cacheUrl.searchParams.set("_b", body);
+    if (body) {
+      cacheUrl.searchParams.set("_b", await sha256(body));
+    }
     const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
     const cache = caches.default;
 
@@ -120,4 +122,13 @@ function corsHeaders(allowed, origin) {
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Max-Age": "86400",
   };
+}
+
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+  return [...new Uint8Array(hashBuffer)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 16);
 }
