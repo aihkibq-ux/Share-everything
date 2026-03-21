@@ -563,14 +563,14 @@ body {
   .hero-section {
     width: 100%;
     min-height: 100svh;
-    padding: 92px 0 44px;
+    padding: 86px 0 44px;
     gap: 20px;
   }
 
   .hero-title {
     max-width: none;
     white-space: nowrap;
-    font-size: clamp(2.08rem, 8.6vw, 3.35rem);
+    font-size: clamp(2.22rem, 9vw, 3.55rem);
     line-height: 1;
     letter-spacing: -0.03em;
   }
@@ -609,15 +609,16 @@ body {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     width: 100%;
-    max-width: 336px;
-    gap: 8px;
+    max-width: 312px;
+    gap: 7px;
+    margin-top: 6px;
   }
 
   .hero-cta-group .btn {
     width: 100%;
-    min-height: 41px;
+    min-height: 39px;
     justify-content: center;
-    padding: 8px 0;
+    padding: 7px 0;
     border-radius: 999px;
   }
 
@@ -1668,12 +1669,12 @@ body {
 
   .hero-section {
     width: 100%;
-    padding-top: 84px;
+    padding-top: 78px;
     gap: 17px;
   }
 
   .hero-title {
-    font-size: clamp(1.82rem, 9vw, 2.56rem);
+    font-size: clamp(1.96rem, 9.4vw, 2.72rem);
     letter-spacing: -0.028em;
   }
 
@@ -1690,13 +1691,14 @@ body {
   }
 
   .hero-cta-group {
-    max-width: 286px;
-    gap: 6px;
+    max-width: 262px;
+    gap: 5px;
+    margin-top: 6px;
   }
 
   .hero-cta-group .btn {
-    min-height: 37px;
-    padding: 7px 0;
+    min-height: 35px;
+    padding: 6px 0;
     border-radius: 999px;
   }
 
