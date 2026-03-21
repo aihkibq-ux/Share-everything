@@ -575,7 +575,7 @@ body {
   }
 
   .hero-search {
-    max-width: 390px;
+    max-width: 430px;
   }
 
   .hero-search input,
@@ -1675,7 +1675,7 @@ body {
   }
 
   .hero-search {
-    max-width: 336px;
+    max-width: 100%;
   }
 
   .hero-search input {
