@@ -7,8 +7,6 @@
       toggleById: () => false,
     };
 
-    if (!notionApi) return null;
-
     const filtersEl = document.getElementById("blogFilters");
     const searchInput = document.getElementById("blogSearch");
     const gridEl = document.getElementById("blogGrid");
@@ -21,10 +19,8 @@
 
     if (!notionApi) {
       console.error("NotionAPI is unavailable on blog page.");
-      gridEl.innerHTML = "";
       filtersEl.replaceChildren();
-      paginationEl.innerHTML = "";
-      emptyEl.style.display = "flex";
+      showEmptyState();
       return null;
     }
 
@@ -55,6 +51,13 @@
       }
 
       detailWarmupHandle = null;
+    }
+
+    function showEmptyState() {
+      clearDetailWarmup();
+      gridEl.innerHTML = "";
+      emptyEl.style.display = "flex";
+      paginationEl.innerHTML = "";
     }
 
     function canWarmArticleDetails() {
@@ -259,9 +262,7 @@
         if (currentToken !== renderToken) return;
 
         if (data.results.length === 0) {
-          gridEl.innerHTML = "";
-          emptyEl.style.display = "flex";
-          paginationEl.innerHTML = "";
+          showEmptyState();
           return;
         }
 
@@ -279,9 +280,7 @@
         if (currentToken !== renderToken) return;
 
         console.error("Failed to load posts:", error);
-        gridEl.innerHTML = "";
-        emptyEl.style.display = "flex";
-        paginationEl.innerHTML = "";
+        showEmptyState();
       }
     }
 
@@ -300,6 +299,7 @@
     function handleSearchInput() {
       clearTimeout(searchDebounce);
       searchDebounce = setTimeout(() => {
+        searchDebounce = null;
         currentSearch = searchInput.value.trim();
         currentPage = 1;
         updateURL();
@@ -364,6 +364,7 @@
     return () => {
       renderToken += 1;
       clearTimeout(searchDebounce);
+      searchDebounce = null;
       filtersEl.removeEventListener("click", handleFilterClick);
       searchInput.removeEventListener("input", handleSearchInput);
       paginationEl.removeEventListener("click", handlePaginationClick);

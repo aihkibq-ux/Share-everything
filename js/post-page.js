@@ -1,4 +1,18 @@
 (() => {
+  function createMediaQueryList(query) {
+    if (typeof window.matchMedia === "function") {
+      return window.matchMedia(query);
+    }
+
+    return {
+      matches: false,
+      addEventListener: null,
+      removeEventListener: null,
+      addListener: () => {},
+      removeListener: () => {},
+    };
+  }
+
   function initPostPage() {
     const notionApi = window.NotionAPI;
     const bookmarkManager = window.BookmarkManager || null;
@@ -24,7 +38,7 @@
     }
 
     const bookmarkElements = [fab, navBookmark].filter(Boolean);
-    const mobileNavQuery = window.matchMedia("(max-width: 768px)");
+    const mobileNavQuery = createMediaQueryList("(max-width: 768px)");
     let isDisposed = false;
     let bookmarkBindings = [];
     let backClickHandler = null;
@@ -87,12 +101,18 @@
 
       if (typeof mobileNavQuery.addEventListener === "function") {
         mobileNavQuery.addEventListener("change", handleMediaChange);
-        mediaQueryCleanup = () => mobileNavQuery.removeEventListener("change", handleMediaChange);
+        mediaQueryCleanup = () => {
+          mobileNavQuery.removeEventListener("change", handleMediaChange);
+          mediaQueryCleanup = null;
+        };
         return;
       }
 
       mobileNavQuery.addListener(handleMediaChange);
-      mediaQueryCleanup = () => mobileNavQuery.removeListener(handleMediaChange);
+      mediaQueryCleanup = () => {
+        mobileNavQuery.removeListener(handleMediaChange);
+        mediaQueryCleanup = null;
+      };
     }
 
     function initBackButton() {

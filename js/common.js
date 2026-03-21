@@ -98,22 +98,29 @@ function initParticles() {
   for (let i = 0; i < particleCount; i++) particles.push(new Particle());
 }
 
-// Reusable draw-data objects to reduce GC pressure
-let drawPool = Array.from({ length: particleCount }, () => ({
-  px: 0,
-  py: 0,
-  pSize: 0,
-  opacity: 0,
-  color: "",
-}));
-
 const bucketKeys = colors;
+let drawPool = [];
 let bucketArrays = {};
 let bucketCounts = {};
-bucketKeys.forEach((c) => {
-  bucketArrays[c] = Array(particleCount);
-  bucketCounts[c] = 0;
-});
+
+function rebuildParticleBuffers() {
+  drawPool = Array.from({ length: particleCount }, () => ({
+    px: 0,
+    py: 0,
+    pSize: 0,
+    opacity: 0,
+    color: "",
+  }));
+
+  bucketArrays = {};
+  bucketCounts = {};
+  bucketKeys.forEach((c) => {
+    bucketArrays[c] = Array(particleCount);
+    bucketCounts[c] = 0;
+  });
+}
+
+rebuildParticleBuffers();
 
 let speedMultiplier = 1;
 let targetSpeedMultiplier = 1;
@@ -215,16 +222,12 @@ window.addEventListener("resize", () => {
   clearParticleBootstrapTimer();
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
+    resizeTimer = null;
     // Update particle count on resize in case of orientation change
     const newCount = window.innerWidth < 768 ? 120 : 350;
     if (newCount !== particleCount) {
       particleCount = newCount;
-      drawPool = Array.from({ length: particleCount }, () => ({
-        px: 0, py: 0, pSize: 0, opacity: 0, color: "",
-      }));
-      bucketKeys.forEach((c) => {
-        bucketArrays[c] = Array(particleCount);
-      });
+      rebuildParticleBuffers();
     }
 
     bootstrapParticles(true);
