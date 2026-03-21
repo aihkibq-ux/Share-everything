@@ -1395,56 +1395,68 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
     max-width: 560px;
+    align-items: stretch;
   }
 
   .blog-card {
+    display: grid;
+    grid-template-rows: minmax(0, 0.4fr) minmax(0, 0.6fr);
+    aspect-ratio: 1 / 1;
     border-radius: 20px;
   }
 
   .blog-card-cover-placeholder {
-    height: clamp(112px, 31vw, 148px);
+    height: auto;
+    min-height: 0;
+    font-size: 2rem;
   }
 
   .blog-card-body {
-    padding: 16px 14px 14px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 14px 13px 13px;
   }
 
   .blog-card-category {
-    margin-bottom: 10px;
-    padding: 3px 10px;
-    font-size: 0.62rem;
+    margin-bottom: 8px;
+    padding: 3px 9px;
+    font-size: 0.58rem;
   }
 
   .blog-card-title {
-    margin-bottom: 8px;
-    font-size: 0.98rem;
-    line-height: 1.35;
+    margin-bottom: 0;
+    font-size: 0.94rem;
+    line-height: 1.33;
   }
 
   .blog-card-excerpt {
-    margin-bottom: 14px;
-    font-size: 0.78rem;
-    line-height: 1.58;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
+    display: none;
   }
 
   .blog-card-meta {
-    flex-wrap: wrap;
-    gap: 10px;
-    font-size: 0.72rem;
+    margin-top: auto;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.67rem;
+  }
+
+  .blog-card-meta > span {
+    min-width: 0;
+    white-space: nowrap;
   }
 
   .blog-card-meta svg {
-    width: 12px;
-    height: 12px;
-    margin-right: 3px;
+    width: 11px;
+    height: 11px;
+    margin-right: 2px;
   }
 
   .card-bookmark-btn {
-    width: 30px;
-    height: 30px;
-    border-radius: 10px;
+    width: 28px;
+    height: 28px;
+    border-radius: 9px;
     background: rgba(255, 255, 255, 0.04);
   }
 
@@ -1714,48 +1726,47 @@ body {
   }
 
   .blog-card {
+    grid-template-rows: minmax(0, 0.38fr) minmax(0, 0.62fr);
     border-radius: 18px;
   }
 
   .blog-card-cover-placeholder {
-    height: clamp(102px, 29vw, 126px);
+    height: auto;
+    min-height: 0;
+    font-size: 1.7rem;
   }
 
   .blog-card-body {
-    padding: 14px 12px 12px;
+    padding: 12px 11px 11px;
   }
 
   .blog-card-category {
-    margin-bottom: 8px;
-    padding: 3px 9px;
-    font-size: 0.58rem;
+    margin-bottom: 6px;
+    padding: 2px 8px;
+    font-size: 0.55rem;
   }
 
   .blog-card-title {
-    font-size: 0.9rem;
-    margin-bottom: 7px;
-  }
-
-  .blog-card-excerpt {
-    margin-bottom: 12px;
-    font-size: 0.72rem;
-    line-height: 1.5;
+    font-size: 0.86rem;
+    margin-bottom: 0;
+    line-height: 1.3;
   }
 
   .blog-card-meta {
-    gap: 8px;
-    font-size: 0.67rem;
+    gap: 6px;
+    font-size: 0.63rem;
   }
 
   .blog-card-meta svg {
-    width: 11px;
-    height: 11px;
+    width: 10px;
+    height: 10px;
+    margin-right: 2px;
   }
 
   .card-bookmark-btn {
-    width: 28px;
-    height: 28px;
-    border-radius: 9px;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
   }
 
   .pagination {
