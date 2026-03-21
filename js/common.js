@@ -9,6 +9,7 @@ const ctx = canvas ? canvas.getContext("2d") : null;
 let width, height;
 let particles = [];
 let rafId = null;
+let particleBootstrapTimer = null;
 let mouseX = 0,
   mouseY = 0;
 let targetMouseX = 0,
@@ -24,12 +25,22 @@ const colors = [
 ];
 
 function resize() {
-  width = window.innerWidth;
-  height = window.innerHeight;
+  const rect = canvas?.getBoundingClientRect();
+  width = Math.max(
+    window.innerWidth || 0,
+    document.documentElement.clientWidth || 0,
+    Math.round(rect?.width || 0),
+  );
+  height = Math.max(
+    window.innerHeight || 0,
+    document.documentElement.clientHeight || 0,
+    Math.round(rect?.height || 0),
+  );
   if (canvas) {
     canvas.width = width;
     canvas.height = height;
   }
+  return width > 0 && height > 0;
 }
 
 class Particle {
@@ -152,6 +163,13 @@ function stopParticles() {
   }
 }
 
+function clearParticleBootstrapTimer() {
+  if (particleBootstrapTimer) {
+    clearTimeout(particleBootstrapTimer);
+    particleBootstrapTimer = null;
+  }
+}
+
 function animateParticles() {
   if (!ctx) return;
   drawParticlesFrame(true);
@@ -161,10 +179,9 @@ function animateParticles() {
 let resizeTimer = null;
 window.addEventListener("resize", () => {
   stopParticles();
+  clearParticleBootstrapTimer();
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
-    resize();
-
     // Update particle count on resize in case of orientation change
     const newCount = window.innerWidth < 768 ? 120 : 350;
     if (newCount !== particleCount) {
@@ -177,9 +194,7 @@ window.addEventListener("resize", () => {
       });
     }
 
-    initParticles();
-    drawParticlesFrame(false);
-    if (!prefersReducedMotion) animateParticles();
+    bootstrapParticles(true);
   }, 300);
 });
 
@@ -195,10 +210,12 @@ let prefersReducedMotion = reducedMotionMedia.matches;
 // 使用 rAF 确保浏览器完成首次布局后再初始化粒子，
 // 避免 width/height 为 0 导致粒子集中在不可见区域
 function bootstrapParticles(force = false) {
-  if (!ctx) return;
+  if (!ctx) return false;
 
   stopParticles();
-  resize();
+  clearParticleBootstrapTimer();
+  const hasViewport = resize();
+  if (!hasViewport) return false;
 
   if (force || !particlesBootstrapped || particles.length !== particleCount) {
     initParticles();
@@ -207,10 +224,24 @@ function bootstrapParticles(force = false) {
 
   drawParticlesFrame(false);
   if (!prefersReducedMotion) animateParticles();
+  return true;
 }
 
-function scheduleParticleBootstrap(force = false) {
-  requestAnimationFrame(() => bootstrapParticles(force));
+function scheduleParticleBootstrap(force = false, attempt = 0) {
+  if (!ctx) return;
+
+  requestAnimationFrame(() => {
+    const didBootstrap = bootstrapParticles(force);
+
+    // Some browsers can briefly report a zero-sized viewport on first open.
+    // Retry a few times so the particle layer does not stay blank until resize.
+    if (!didBootstrap && attempt < 6) {
+      particleBootstrapTimer = setTimeout(() => {
+        particleBootstrapTimer = null;
+        scheduleParticleBootstrap(true, attempt + 1);
+      }, 80 + attempt * 80);
+    }
+  });
 }
 
 // 不等 window.load，避免外部字体等资源卡住时粒子迟迟不启动
@@ -227,6 +258,12 @@ window.addEventListener("load", () => scheduleParticleBootstrap(true), {
   once: true,
 });
 
+window.addEventListener("pageshow", () => {
+  if (!particlesBootstrapped || !rafId) {
+    scheduleParticleBootstrap(true);
+  }
+});
+
 reducedMotionMedia.addEventListener?.("change", (event) => {
   prefersReducedMotion = event.matches;
   if (!particlesBootstrapped) return;
@@ -237,14 +274,9 @@ reducedMotionMedia.addEventListener?.("change", (event) => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     stopParticles();
+    clearParticleBootstrapTimer();
   } else if (ctx) {
-    if (!particlesBootstrapped) {
-      bootstrapParticles(true);
-      return;
-    }
-
-    drawParticlesFrame(false);
-    if (!prefersReducedMotion && !rafId) animateParticles();
+    scheduleParticleBootstrap(!particlesBootstrapped || !rafId);
   }
 });
 
