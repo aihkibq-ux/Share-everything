@@ -357,3 +357,5 @@ const NotionAPI = (() => {
     getPageSize: () => CONFIG.pageSize,
   };
 })();
+
+window.NotionAPI = NotionAPI;

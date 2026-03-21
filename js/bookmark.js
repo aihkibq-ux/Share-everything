@@ -116,3 +116,5 @@ const BookmarkManager = (() => {
 
   return { getAll, isBookmarked, toggle, toggleById };
 })();
+
+window.BookmarkManager = BookmarkManager;
