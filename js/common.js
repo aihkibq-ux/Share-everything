@@ -176,12 +176,22 @@ window.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") 
 
 // 尊重用户的减少动画偏好
 const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-if (!prefersReducedMotion) {
+
+// 使用 rAF 确保浏览器完成首次布局后再初始化粒子，
+// 避免 width/height 为 0 导致粒子集中在不可见区域
+function bootstrapParticles() {
   resize();
-  initParticles();
-  animateParticles();
+  if (!prefersReducedMotion) {
+    initParticles();
+    animateParticles();
+  }
+}
+
+// 如果文档尚未完全加载，等待 load 事件；否则直接用 rAF 延迟一帧
+if (document.readyState === "complete") {
+  requestAnimationFrame(bootstrapParticles);
 } else {
-  resize(); // 仍需设置 canvas 尺寸
+  window.addEventListener("load", () => requestAnimationFrame(bootstrapParticles));
 }
 
 // 页面不可见时暂停粒子动画，节省 CPU/GPU
