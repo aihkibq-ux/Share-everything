@@ -558,7 +558,20 @@ body {
   }
 
   .hero-search {
-    max-width: 100%;
+    max-width: 392px;
+  }
+
+  .hero-search input {
+    min-height: 50px;
+    padding: 14px 48px 14px 18px;
+    border-radius: 20px;
+    font-size: 0.92rem;
+  }
+
+  .hero-search .search-icon {
+    right: 14px;
+    width: 16px;
+    height: 16px;
   }
 
   .hero-search input,
@@ -577,21 +590,21 @@ body {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     width: 100%;
-    max-width: 390px;
-    gap: 10px;
+    max-width: 372px;
+    gap: 9px;
   }
 
   .hero-cta-group .btn {
     width: 100%;
-    min-height: 50px;
+    min-height: 46px;
     justify-content: center;
-    padding: 12px 0;
-    border-radius: 20px;
+    padding: 10px 0;
+    border-radius: 18px;
   }
 
   .hero-cta-group .btn svg {
-    width: 16px;
-    height: 16px;
+    width: 15px;
+    height: 15px;
   }
 
   .btn-tooltip {
@@ -1285,6 +1298,33 @@ body {
 }
 
 @media (max-width: 768px) {
+  body[data-page="blog"] .top-actions {
+    top: auto;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    left: 14px;
+    right: 14px;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 20px;
+  }
+
+  body[data-page="blog"] .action-btn {
+    gap: 4px;
+    padding: 9px 8px;
+    border-radius: 14px;
+    font-size: 0.72rem;
+  }
+
+  body[data-page="blog"] .action-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  body[data-page="blog"] .page-container {
+    padding-top: 92px;
+    padding-bottom: 128px;
+  }
+
   .page-container,
   .post-container {
     padding: 116px 18px 104px;
@@ -1509,20 +1549,37 @@ body {
     font-size: clamp(2.8rem, 15vw, 4.1rem);
   }
 
+  .hero-search {
+    max-width: 332px;
+  }
+
+  .hero-search input {
+    min-height: 46px;
+    padding: 13px 44px 13px 16px;
+    border-radius: 18px;
+    font-size: 0.88rem;
+  }
+
+  .hero-search .search-icon {
+    right: 13px;
+    width: 15px;
+    height: 15px;
+  }
+
   .hero-cta-group {
-    max-width: 348px;
-    gap: 8px;
+    max-width: 324px;
+    gap: 7px;
   }
 
   .hero-cta-group .btn {
-    min-height: 46px;
-    padding: 10px 0;
-    border-radius: 18px;
+    min-height: 42px;
+    padding: 9px 0;
+    border-radius: 16px;
   }
 
   .hero-cta-group .btn svg {
-    width: 15px;
-    height: 15px;
+    width: 14px;
+    height: 14px;
   }
 
   .top-actions {
@@ -1544,10 +1601,35 @@ body {
     height: 15px;
   }
 
+  body[data-page="blog"] .top-actions {
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    left: 12px;
+    right: 12px;
+    gap: 7px;
+    padding: 7px;
+    border-radius: 18px;
+  }
+
+  body[data-page="blog"] .action-btn {
+    gap: 4px;
+    padding: 8px 6px;
+    font-size: 0.69rem;
+  }
+
+  body[data-page="blog"] .action-btn svg {
+    width: 13px;
+    height: 13px;
+  }
+
   .page-container,
   .post-container {
     padding-left: 16px;
     padding-right: 16px;
+  }
+
+  body[data-page="blog"] .page-container {
+    padding-top: 88px;
+    padding-bottom: 122px;
   }
 
   .blog-card-body {
