@@ -1,6 +1,13 @@
 (() => {
   function initBlogPage() {
-    if (!window.NotionAPI || !window.BookmarkManager) return null;
+    const notionApi = window.NotionAPI;
+    const bookmarkManager = window.BookmarkManager || {
+      getAll: () => [],
+      isBookmarked: () => false,
+      toggleById: () => false,
+    };
+
+    if (!notionApi) return null;
 
     const filtersEl = document.getElementById("blogFilters");
     const searchInput = document.getElementById("blogSearch");
@@ -9,6 +16,15 @@
     const paginationEl = document.getElementById("pagination");
 
     if (!filtersEl || !searchInput || !gridEl || !emptyEl || !paginationEl) {
+      return null;
+    }
+
+    if (!notionApi) {
+      console.error("NotionAPI is unavailable on blog page.");
+      gridEl.innerHTML = "";
+      filtersEl.replaceChildren();
+      paginationEl.innerHTML = "";
+      emptyEl.style.display = "flex";
       return null;
     }
 
@@ -23,8 +39,8 @@
     if (params.get("search")) currentSearch = params.get("search");
     if (params.get("page")) currentPage = parseInt(params.get("page"), 10) || 1;
 
-    const categories = NotionAPI.getCategories();
-    const pageSize = NotionAPI.getPageSize?.() || 9;
+    const categories = notionApi.getCategories();
+    const pageSize = notionApi.getPageSize?.() || 9;
     const validCategories = new Set([...categories.map((cat) => cat.name), "收藏"]);
     if (!validCategories.has(currentCategory)) currentCategory = "全部";
 
@@ -32,6 +48,17 @@
       const titleEl = document.querySelector(".page-title");
       if (titleEl) {
         titleEl.textContent = currentCategory === "全部" ? "总览" : currentCategory;
+      }
+
+      document.title = `${currentCategory === "全部" ? "总览" : currentCategory} — Share Everything`;
+      const description = currentSearch
+        ? `搜索“${currentSearch}”的相关文章`
+        : currentCategory === "全部"
+          ? "探索所有文章，按分类浏览，搜索你感兴趣的内容。"
+          : `浏览「${currentCategory}」分类下的文章`;
+      const metaDescription = document.querySelector('meta[name="description"]');
+      if (metaDescription) {
+        metaDescription.content = description;
       }
 
       const topActions = document.querySelectorAll(".top-actions .action-btn");
@@ -86,9 +113,9 @@
     }
 
     function renderCard(post) {
-      const esc = NotionAPI.escapeHtml;
-      const catColor = NotionAPI.getCategoryColor(post.category);
-      const bookmarked = BookmarkManager.isBookmarked(post.id);
+      const esc = notionApi.escapeHtml;
+      const catColor = notionApi.getCategoryColor(post.category);
+      const bookmarked = bookmarkManager.isBookmarked(post.id);
 
       const safeTitle = esc(post.title);
       const safeExcerpt = esc(post.excerpt);
@@ -156,7 +183,7 @@
         let data;
 
         if (currentCategory === "收藏") {
-          let bookmarks = BookmarkManager.getAll();
+          let bookmarks = bookmarkManager.getAll();
 
           if (currentSearch) {
             const query = currentSearch.toLowerCase();
@@ -178,7 +205,7 @@
             currentPage: safePage,
           };
         } else {
-          data = await NotionAPI.queryPosts({
+          data = await notionApi.queryPosts({
             category: currentCategory,
             search: currentSearch,
             page: currentPage,
@@ -253,7 +280,7 @@
       event.stopPropagation();
 
       const postId = button.dataset.bookmarkId;
-      const nowBookmarked = BookmarkManager.toggleById(postId);
+      const nowBookmarked = bookmarkManager.toggleById(postId);
 
       button.classList.toggle("bookmarked", nowBookmarked);
       button.title = nowBookmarked ? "取消收藏" : "收藏";

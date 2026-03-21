@@ -7,6 +7,13 @@ const BookmarkManager = (() => {
   const BOOKMARK_KEY = "bookmarked_posts";
   let bookmarksCache = null;
 
+  function escapeSelectorValue(value) {
+    if (window.CSS?.escape) {
+      return window.CSS.escape(value);
+    }
+    return String(value).replace(/["\\]/g, "\\$&");
+  }
+
   function readBookmarks() {
     if (bookmarksCache) return bookmarksCache;
     try {
@@ -75,7 +82,7 @@ const BookmarkManager = (() => {
     if (exists) {
       bookmarks = bookmarks.filter(b => b.id !== postId);
     } else {
-      const card = document.querySelector(`[data-post-id="${CSS.escape(postId)}"]`);
+      const card = document.querySelector(`[data-post-id="${escapeSelectorValue(postId)}"]`);
       if (card) {
         const title = card.querySelector('.blog-card-title')?.textContent || '';
         const excerpt = card.querySelector('.blog-card-excerpt')?.textContent || '';

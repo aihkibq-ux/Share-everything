@@ -9,6 +9,7 @@ const NotionAPI = (() => {
     databaseId: "32485b780a2580eaa67ecf051676d693",
     pageSize: 9,
   };
+  const REQUEST_TIMEOUT = 12000;
 
   // ====== 分类固定列表（Notion 不提供动态获取接口） ======
   const CATEGORIES = [
@@ -78,14 +79,29 @@ const NotionAPI = (() => {
   }
 
   async function requestJson(path, init = {}, { allow400AsEmpty = false } = {}) {
-    const res = await fetch(`${CONFIG.workerUrl}${path}`, init);
-    if (!res.ok) {
-      if (allow400AsEmpty && res.status === 400) {
-        return { results: [], has_more: false, next_cursor: null };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+    try {
+      const res = await fetch(`${CONFIG.workerUrl}${path}`, {
+        ...init,
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        if (allow400AsEmpty && res.status === 400) {
+          return { results: [], has_more: false, next_cursor: null };
+        }
+        throw new Error(`Notion API error: ${res.status}`);
       }
-      throw new Error(`Notion API error: ${res.status}`);
+      return res.json();
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new Error("Notion API request timed out");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
-    return res.json();
   }
 
   async function fetchFromNotionRemote(category, cacheKey) {
@@ -140,7 +156,8 @@ const NotionAPI = (() => {
     // 分页切片
     const total = results.length;
     const totalPages = Math.max(1, Math.ceil(total / CONFIG.pageSize));
-    const currentPage = Math.min(page, totalPages);
+    const requestedPage = Number.isFinite(Number(page)) ? Number(page) : 1;
+    const currentPage = Math.max(1, Math.min(requestedPage, totalPages));
     const start = (currentPage - 1) * CONFIG.pageSize;
     const paged = results.slice(start, start + CONFIG.pageSize);
 

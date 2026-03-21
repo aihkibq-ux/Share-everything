@@ -1,6 +1,9 @@
 (() => {
   function initPostPage() {
-    if (!window.NotionAPI || !window.BookmarkManager) return null;
+    const notionApi = window.NotionAPI;
+    const bookmarkManager = window.BookmarkManager || null;
+
+    if (!notionApi) return null;
 
     const params = new URLSearchParams(window.location.search);
     const postId = params.get("id");
@@ -12,6 +15,12 @@
     const postBack = document.getElementById("postBack");
 
     if (!skeletonEl || !contentEl || !emptyEl || !articleEl || !fab) {
+      return null;
+    }
+
+    if (!notionApi) {
+      console.error("NotionAPI is unavailable on post page.");
+      showEmpty();
       return null;
     }
 
@@ -51,6 +60,7 @@
     function showEmpty() {
       skeletonEl.style.display = "none";
       articleEl.querySelector(".post-back")?.style.setProperty("display", "none");
+      fab.style.display = "none";
       emptyEl.style.display = "flex";
     }
 
@@ -72,17 +82,20 @@
 
     function initBookmark(post) {
       const label = fab.querySelector(".fab-bookmark-label");
-      if (!label) return;
+      if (!label || !bookmarkManager) {
+        fab.style.display = "none";
+        return;
+      }
 
       cleanupBookmarkHandler();
       fab.style.display = "flex";
 
-      const initialBookmarked = BookmarkManager.isBookmarked(post.id);
+      const initialBookmarked = bookmarkManager.isBookmarked(post.id);
       fab.classList.toggle("bookmarked", initialBookmarked);
       label.textContent = initialBookmarked ? "已收藏" : "收藏";
 
       bookmarkClickHandler = () => {
-        const nowBookmarked = BookmarkManager.toggle(post);
+        const nowBookmarked = bookmarkManager.toggle(post);
         fab.classList.toggle("bookmarked", nowBookmarked);
         label.textContent = nowBookmarked ? "已收藏" : "收藏";
         fab.classList.remove("bounce");
@@ -100,7 +113,7 @@
       }
 
       try {
-        const post = await NotionAPI.getPost(postId);
+        const post = await notionApi.getPost(postId);
         if (isDisposed) return;
 
         if (!post) {
@@ -111,9 +124,9 @@
         document.title = `${post.title} — Share Everything`;
         document.querySelector('meta[name="description"]').content = post.excerpt || post.title;
 
-        const catColor = NotionAPI.getCategoryColor(post.category);
-        const esc = NotionAPI.escapeHtml;
-        const renderedContent = NotionAPI.renderBlocks(post.content || []);
+        const catColor = notionApi.getCategoryColor(post.category);
+        const esc = notionApi.escapeHtml;
+        const renderedContent = notionApi.renderBlocks(post.content || []);
 
         contentEl.innerHTML = `
           <div class="post-header">
