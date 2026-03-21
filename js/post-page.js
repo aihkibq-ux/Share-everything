@@ -10,6 +10,7 @@
     const emptyEl = document.getElementById("postEmpty");
     const articleEl = document.getElementById("postArticle");
     const fab = document.getElementById("fabBookmark");
+    const navBookmark = document.getElementById("navBookmark");
     const postBack = document.getElementById("postBack");
 
     if (!skeletonEl || !contentEl || !emptyEl || !articleEl || !fab) {
@@ -22,15 +23,54 @@
       return null;
     }
 
+    const bookmarkElements = [fab, navBookmark].filter(Boolean);
+    const mobileNavQuery = window.matchMedia("(max-width: 768px)");
     let isDisposed = false;
-    let bookmarkClickHandler = null;
+    let bookmarkBindings = [];
     let backClickHandler = null;
+    let bookmarkControlsVisible = false;
+    let mediaQueryCleanup = null;
 
-    function cleanupBookmarkHandler() {
-      if (bookmarkClickHandler) {
-        fab.removeEventListener("click", bookmarkClickHandler);
-        bookmarkClickHandler = null;
-      }
+    function cleanupBookmarkHandlers() {
+      if (!bookmarkBindings.length) return;
+
+      bookmarkBindings.forEach(({ element, handler }) => {
+        element.removeEventListener("click", handler);
+      });
+      bookmarkBindings = [];
+    }
+
+    function setBookmarkControlsVisible(isVisible) {
+      bookmarkControlsVisible = isVisible;
+
+      bookmarkElements.forEach((element) => {
+        if (!isVisible) {
+          element.style.display = "none";
+          return;
+        }
+
+        if (element === navBookmark) {
+          element.style.display = mobileNavQuery.matches ? "inline-flex" : "none";
+        } else {
+          element.style.display = "flex";
+        }
+      });
+    }
+
+    function syncBookmarkControls(isBookmarked) {
+      const labelText = isBookmarked ? "已收藏" : "收藏";
+
+      bookmarkElements.forEach((element) => {
+        element.classList.toggle("bookmarked", isBookmarked);
+        element.setAttribute("aria-pressed", isBookmarked ? "true" : "false");
+        element.setAttribute("aria-label", labelText);
+        element.setAttribute("title", labelText);
+
+        const label = element.querySelector(".fab-bookmark-label");
+        if (label) {
+          label.textContent = labelText;
+        }
+      });
     }
 
     function cleanupBackHandler() {
@@ -38,6 +78,21 @@
         postBack.removeEventListener("click", backClickHandler);
         backClickHandler = null;
       }
+    }
+
+    function bindResponsiveBookmarkVisibility() {
+      const handleMediaChange = () => {
+        setBookmarkControlsVisible(bookmarkControlsVisible);
+      };
+
+      if (typeof mobileNavQuery.addEventListener === "function") {
+        mobileNavQuery.addEventListener("change", handleMediaChange);
+        mediaQueryCleanup = () => mobileNavQuery.removeEventListener("change", handleMediaChange);
+        return;
+      }
+
+      mobileNavQuery.addListener(handleMediaChange);
+      mediaQueryCleanup = () => mobileNavQuery.removeListener(handleMediaChange);
     }
 
     function initBackButton() {
@@ -58,7 +113,7 @@
     function showEmpty() {
       skeletonEl.style.display = "none";
       articleEl.querySelector(".post-back")?.style.setProperty("display", "none");
-      fab.style.display = "none";
+      setBookmarkControlsVisible(false);
       emptyEl.style.display = "flex";
     }
 
@@ -79,29 +134,27 @@
     }
 
     function initBookmark(post) {
-      const label = fab.querySelector(".fab-bookmark-label");
-      if (!label || !bookmarkManager) {
-        fab.style.display = "none";
+      if (!bookmarkManager || !bookmarkElements.length) {
+        setBookmarkControlsVisible(false);
         return;
       }
 
-      cleanupBookmarkHandler();
-      fab.style.display = "flex";
+      cleanupBookmarkHandlers();
+      setBookmarkControlsVisible(true);
+      syncBookmarkControls(bookmarkManager.isBookmarked(post.id));
 
-      const initialBookmarked = bookmarkManager.isBookmarked(post.id);
-      fab.classList.toggle("bookmarked", initialBookmarked);
-      label.textContent = initialBookmarked ? "已收藏" : "收藏";
+      bookmarkElements.forEach((element) => {
+        const handler = () => {
+          const nowBookmarked = bookmarkManager.toggle(post);
+          syncBookmarkControls(nowBookmarked);
+          element.classList.remove("bounce");
+          void element.offsetWidth;
+          element.classList.add("bounce");
+        };
 
-      bookmarkClickHandler = () => {
-        const nowBookmarked = bookmarkManager.toggle(post);
-        fab.classList.toggle("bookmarked", nowBookmarked);
-        label.textContent = nowBookmarked ? "已收藏" : "收藏";
-        fab.classList.remove("bounce");
-        void fab.offsetWidth;
-        fab.classList.add("bounce");
-      };
-
-      fab.addEventListener("click", bookmarkClickHandler);
+        element.addEventListener("click", handler);
+        bookmarkBindings.push({ element, handler });
+      });
     }
 
     async function loadPost() {
@@ -171,12 +224,14 @@
     }
 
     initBackButton();
+    bindResponsiveBookmarkVisibility();
     loadPost();
 
     return () => {
       isDisposed = true;
-      cleanupBookmarkHandler();
+      cleanupBookmarkHandlers();
       cleanupBackHandler();
+      mediaQueryCleanup?.();
     };
   }
 
