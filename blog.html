@@ -152,6 +152,11 @@
       /* ===== Render Filters ===== */
       const filtersEl = document.getElementById("blogFilters");
       const categories = NotionAPI.getCategories();
+      const pageSize = NotionAPI.getPageSize?.() || 9;
+      const validCategories = new Set([...categories.map((cat) => cat.name), "收藏"]);
+      let renderToken = 0;
+
+      if (!validCategories.has(currentCategory)) currentCategory = "全部";
 
       categories.forEach((cat) => {
         const btn = document.createElement("button");
@@ -191,6 +196,7 @@
       const paginationEl = document.getElementById("pagination");
 
       async function renderPosts() {
+        const currentToken = ++renderToken;
         try {
           let data;
 
@@ -206,10 +212,10 @@
               );
             }
             const total = bookmarks.length;
-            const totalPages = Math.max(1, Math.ceil(total / 9));
+            const totalPages = Math.max(1, Math.ceil(total / pageSize));
             const cp = Math.min(currentPage, totalPages);
-            const start = (cp - 1) * 9;
-            data = { results: bookmarks.slice(start, start + 9), total, totalPages, currentPage: cp };
+            const start = (cp - 1) * pageSize;
+            data = { results: bookmarks.slice(start, start + pageSize), total, totalPages, currentPage: cp };
           } else {
             data = await NotionAPI.queryPosts({
               category: currentCategory,
@@ -217,6 +223,8 @@
               page: currentPage,
             });
           }
+
+          if (currentToken !== renderToken) return;
 
           if (data.results.length === 0) {
             gridEl.innerHTML = "";
@@ -237,6 +245,7 @@
           // Save to reading history
           saveHistory();
         } catch (error) {
+          if (currentToken !== renderToken) return;
           console.error("Failed to load posts:", error);
           gridEl.innerHTML = "";
           emptyEl.style.display = "flex";

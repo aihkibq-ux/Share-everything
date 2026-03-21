@@ -39,8 +39,8 @@ const NotionAPI = (() => {
   }
 
   // ====== Notion API 调用 ======
-  async function fetchFromNotion(category, fetchAll = false) {
-    const cacheKey = `notion_query_${category || "all"}_${fetchAll}`;
+  async function fetchFromNotion(category) {
+    const cacheKey = `notion_query_${category || "all"}`;
     const cached = getCache(cacheKey);
 
     if (cached) {
@@ -49,62 +49,72 @@ const NotionAPI = (() => {
         // 缓存未硬过期
         if (age > STALE_TTL) {
           // stale: 先返回旧数据，后台静默刷新
-          fetchFromNotionRemote(category, fetchAll, cacheKey).catch(() => {});
+          fetchFromNotionRemote(category, cacheKey).catch(() => {});
         }
         return cached.data;
       }
     }
 
     // 无缓存或已硬过期，必须等待网络
-    return fetchFromNotionRemote(category, fetchAll, cacheKey);
+    return fetchFromNotionRemote(category, cacheKey);
   }
 
-  async function fetchFromNotionRemote(category, fetchAll, cacheKey) {
-    const body = {
-      page_size: fetchAll ? 100 : CONFIG.pageSize,
-      sorts: [{ property: "Date", direction: "descending" }],
-    };
-
-    if (category && category !== "全部") {
-      body.filter = {
-        property: "Category",
-        select: { equals: category },
-      };
-    }
-
-    const res = await fetch(
-      `${CONFIG.workerUrl}/databases/${CONFIG.databaseId}/query`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }
-    );
-
+  async function requestJson(path, init = {}, { allow400AsEmpty = false } = {}) {
+    const res = await fetch(`${CONFIG.workerUrl}${path}`, init);
     if (!res.ok) {
-      if (res.status === 400) return [];
+      if (allow400AsEmpty && res.status === 400) {
+        return { results: [], has_more: false, next_cursor: null };
+      }
       throw new Error(`Notion API error: ${res.status}`);
     }
-    const data = await res.json();
-    const mappedData = data.results.map(mapNotionPage);
+    return res.json();
+  }
+
+  async function fetchFromNotionRemote(category, cacheKey) {
+    const allPages = [];
+    let startCursor = null;
+
+    do {
+      const body = {
+        page_size: 100,
+        sorts: [{ property: "Date", direction: "descending" }],
+      };
+
+      if (startCursor) body.start_cursor = startCursor;
+
+      if (category && category !== "全部") {
+        body.filter = {
+          property: "Category",
+          select: { equals: category },
+        };
+      }
+
+      const data = await requestJson(
+        `/databases/${CONFIG.databaseId}/query`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+        { allow400AsEmpty: true },
+      );
+
+      allPages.push(...data.results);
+      startCursor = data.has_more ? data.next_cursor : null;
+    } while (startCursor);
+
+    const mappedData = allPages.map(mapNotionPage);
     setCache(cacheKey, mappedData);
     return mappedData;
   }
 
   async function liveQueryDatabase({ category, search, page = 1 }) {
-    // 有搜索词时拉取全量再内存过滤；否则只取一页
-    const needAll = Boolean(search);
-    let results = await fetchFromNotion(category, needAll);
+    let results = await fetchFromNotion(category);
 
     // 内存搜索过滤
     if (search) {
       const q = search.toLowerCase();
-      results = results.filter(
-        (p) =>
-          p.title.toLowerCase().includes(q) ||
-          p.excerpt.toLowerCase().includes(q) ||
-          (p.tags || []).some((t) => t.toLowerCase().includes(q))
-      );
+      results = results.filter((p) => p._searchText.includes(q));
     }
 
     // 分页切片
@@ -136,19 +146,29 @@ const NotionAPI = (() => {
   }
 
   async function fetchPageRemote(pageId, cacheKey) {
+    async function fetchAllBlockChildren(blockId) {
+      const blocks = [];
+      let startCursor = null;
+
+      do {
+        const qs = new URLSearchParams({ page_size: "100" });
+        if (startCursor) qs.set("start_cursor", startCursor);
+        const data = await requestJson(`/blocks/${blockId}/children?${qs.toString()}`);
+        blocks.push(...data.results);
+        startCursor = data.has_more ? data.next_cursor : null;
+      } while (startCursor);
+
+      return blocks;
+    }
+
     const [pageRes, blocksRes] = await Promise.all([
-      fetch(`${CONFIG.workerUrl}/pages/${pageId}`),
-      fetch(`${CONFIG.workerUrl}/blocks/${pageId}/children?page_size=100`),
+      requestJson(`/pages/${pageId}`),
+      fetchAllBlockChildren(pageId),
     ]);
 
-    if (!pageRes.ok || !blocksRes.ok) throw new Error("Notion API error");
-
-    const page = await pageRes.json();
-    const blocks = await blocksRes.json();
-
     const mappedData = {
-      ...mapNotionPage(page),
-      content: blocks.results.map(mapNotionBlock),
+      ...mapNotionPage(pageRes),
+      content: blocksRes.map(mapNotionBlock),
     };
 
     setCache(cacheKey, mappedData);
@@ -173,6 +193,11 @@ const NotionAPI = (() => {
       coverEmoji: page.icon?.emoji || "📝",
       coverGradient: gradientForCategory(category),
       tags: props.Tags?.multi_select?.map((t) => t.name) || [],
+      _searchText: [
+        props.Name?.title?.[0]?.plain_text || "",
+        props.Excerpt?.rich_text?.[0]?.plain_text || "",
+        ...(props.Tags?.multi_select?.map((t) => t.name) || []),
+      ].join(" ").toLowerCase(),
     };
   }
 
@@ -266,7 +291,7 @@ const NotionAPI = (() => {
         case "code":        html += `<pre><code class="language-${escapeHtml(block.language)}">${escapeHtml(block.text)}</code></pre>`; break;
         case "quote":       html += `<blockquote>${block.text}</blockquote>`; break;
         case "divider":     html += "<hr>"; break;
-        case "image":       html += `<img src="${block.url}" alt="${escapeHtml(block.caption)}" loading="lazy">`; break;
+        case "image":       html += `<img src="${escapeHtml(block.url)}" alt="${escapeHtml(block.caption)}" loading="lazy">`; break;
         default: break;
       }
     }
@@ -281,7 +306,8 @@ const NotionAPI = (() => {
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   // ====== 分类颜色映射 ======
@@ -306,5 +332,6 @@ const NotionAPI = (() => {
     renderBlocks,
     escapeHtml,
     getCategoryColor,
+    getPageSize: () => CONFIG.pageSize,
   };
 })();

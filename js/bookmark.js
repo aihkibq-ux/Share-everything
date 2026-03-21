@@ -5,21 +5,32 @@
 
 const BookmarkManager = (() => {
   const BOOKMARK_KEY = "bookmarked_posts";
+  let bookmarksCache = null;
+
+  function readBookmarks() {
+    if (bookmarksCache) return bookmarksCache;
+    try {
+      const parsed = JSON.parse(localStorage.getItem(BOOKMARK_KEY) || "[]");
+      bookmarksCache = Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      bookmarksCache = [];
+    }
+    return bookmarksCache;
+  }
 
   function getAll() {
-    try {
-      return JSON.parse(localStorage.getItem(BOOKMARK_KEY) || "[]");
-    } catch (e) { return []; }
+    return [...readBookmarks()];
   }
 
   function save(bookmarks) {
+    bookmarksCache = Array.isArray(bookmarks) ? bookmarks : [];
     try {
-      localStorage.setItem(BOOKMARK_KEY, JSON.stringify(bookmarks));
+      localStorage.setItem(BOOKMARK_KEY, JSON.stringify(bookmarksCache));
     } catch (e) {}
   }
 
   function isBookmarked(id) {
-    return getAll().some(b => b.id === id);
+    return readBookmarks().some(b => b.id === id);
   }
 
   /**
@@ -92,6 +103,16 @@ const BookmarkManager = (() => {
     save(bookmarks);
     return !exists;
   }
+
+  window.addEventListener("storage", (event) => {
+    if (event.key !== BOOKMARK_KEY) return;
+    try {
+      const parsed = JSON.parse(event.newValue || "[]");
+      bookmarksCache = Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      bookmarksCache = [];
+    }
+  });
 
   return { getAll, isBookmarked, toggle, toggleById };
 })();

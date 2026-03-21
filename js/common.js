@@ -9,6 +9,7 @@ const ctx = canvas ? canvas.getContext("2d") : null;
 let width, height;
 let particles = [];
 let rafId = null;
+let particleBootstrapTimer = null;
 let mouseX = 0,
   mouseY = 0;
 let targetMouseX = 0,
@@ -116,6 +117,7 @@ bucketKeys.forEach((c) => {
 
 let speedMultiplier = 1;
 let targetSpeedMultiplier = 1;
+let particlesBootstrapped = false;
 
 function drawParticlesFrame(advance = true) {
   if (!ctx || !width || !height) return;
@@ -161,19 +163,58 @@ function stopParticles() {
   }
 }
 
+function clearParticleBootstrapTimer() {
+  if (particleBootstrapTimer) {
+    clearTimeout(particleBootstrapTimer);
+    particleBootstrapTimer = null;
+  }
+}
+
 function animateParticles() {
   if (!ctx) return;
   drawParticlesFrame(true);
   rafId = requestAnimationFrame(animateParticles);
 }
 
+function bootstrapParticles(force = false) {
+  if (!ctx) return false;
+
+  stopParticles();
+  clearParticleBootstrapTimer();
+
+  const hasViewport = resize();
+  if (!hasViewport) return false;
+
+  if (force || !particlesBootstrapped || particles.length !== particleCount) {
+    initParticles();
+    particlesBootstrapped = true;
+  }
+
+  drawParticlesFrame(false);
+  animateParticles();
+  return true;
+}
+
+function scheduleParticleBootstrap(force = false, attempt = 0) {
+  if (!ctx) return;
+
+  requestAnimationFrame(() => {
+    const didBootstrap = bootstrapParticles(force);
+    if (!didBootstrap && attempt < 6) {
+      particleBootstrapTimer = setTimeout(() => {
+        particleBootstrapTimer = null;
+        scheduleParticleBootstrap(true, attempt + 1);
+      }, 80 + attempt * 80);
+    }
+  });
+}
+
 let resizeTimer = null;
 window.addEventListener("resize", () => {
   stopParticles();
+  clearParticleBootstrapTimer();
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
-    resize();
-
     // Update particle count on resize in case of orientation change
     const newCount = window.innerWidth < 768 ? 120 : 350;
     if (newCount !== particleCount) {
@@ -186,8 +227,7 @@ window.addEventListener("resize", () => {
       });
     }
 
-    initParticles();
-    animateParticles();
+    bootstrapParticles(true);
   }, 300);
 });
 
@@ -202,16 +242,31 @@ window.addEventListener("touchend", () => (targetSpeedMultiplier = 1), {
   passive: true,
 });
 
-resize();
-initParticles();
-animateParticles();
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => scheduleParticleBootstrap(), {
+    once: true,
+  });
+} else {
+  scheduleParticleBootstrap();
+}
+
+window.addEventListener("load", () => scheduleParticleBootstrap(true), {
+  once: true,
+});
+
+window.addEventListener("pageshow", () => {
+  if (!particlesBootstrapped || !rafId) {
+    scheduleParticleBootstrap(true);
+  }
+});
 
 // 页面不可见时暂停粒子动画，节省 CPU/GPU
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     stopParticles();
-  } else if (!rafId && ctx) {
-    animateParticles();
+    clearParticleBootstrapTimer();
+  } else if (ctx) {
+    scheduleParticleBootstrap(!particlesBootstrapped || !rafId);
   }
 });
 
@@ -249,8 +304,7 @@ function initBlogCardReveal() {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
           const card = entry.target;
-          const siblings = [...card.parentElement.children];
-          const i = siblings.indexOf(card);
+          const i = Number(card.dataset.revealIndex || 0);
           setTimeout(() => card.classList.add("visible"), i * 80);
           observer.unobserve(card);
         }
@@ -258,7 +312,10 @@ function initBlogCardReveal() {
     },
     { threshold: 0.1 },
   );
-  blogCards.forEach((el) => observer.observe(el));
+  blogCards.forEach((el, index) => {
+    el.dataset.revealIndex = String(index);
+    observer.observe(el);
+  });
 }
 
 // Expose for use in page scripts
@@ -362,7 +419,7 @@ const SPARouter = (() => {
       });
 
       // ⑦ 滚动到顶部
-      window.scrollTo({ top: 0, behavior: "instant" });
+      window.scrollTo({ top: 0, behavior: "auto" });
 
       // 尽早解锁，允许下一次导航
       isNavigating = false;
