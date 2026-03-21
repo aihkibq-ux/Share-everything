@@ -476,6 +476,17 @@ const SPARouter = (() => {
     });
   }
 
+  function warmPostDetail(link) {
+    if (!link?.href || !link.href.startsWith(window.location.origin)) return;
+    if (link.dataset.preloaded === "true") return;
+
+    const id = new URL(link.href).searchParams.get("id");
+    if (!id || !window.NotionAPI?.getPost) return;
+
+    link.dataset.preloaded = "true";
+    NotionAPI.getPost(id).catch(() => {});
+  }
+
   async function navigate(url, pushState = true) {
     const content = document.getElementById("spa-content");
     if (!content) {
@@ -613,11 +624,18 @@ const SPARouter = (() => {
     }
     // Notion 数据预加载
     const card = e.target.closest("a.blog-card");
-    if (card && card.href && !card.dataset.preloaded) {
-      card.dataset.preloaded = "true";
-      const id = new URL(card.href).searchParams.get("id");
-      if (id && window.NotionAPI && NotionAPI.getPost) NotionAPI.getPost(id).catch(() => {});
+    if (card && card.href) {
+      warmPostDetail(card);
     }
+  });
+
+  document.addEventListener("pointerdown", (e) => {
+    const card = e.target.closest("a.blog-card");
+    if (card && card.href) {
+      warmPostDetail(card);
+    }
+  }, {
+    passive: true,
   });
 
   document.addEventListener("focusin", (e) => {

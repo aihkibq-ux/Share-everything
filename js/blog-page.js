@@ -33,6 +33,7 @@
     let currentPage = 1;
     let renderToken = 0;
     let searchDebounce = null;
+    let detailWarmupHandle = null;
 
     const params = new URLSearchParams(window.location.search);
     if (params.get("category")) currentCategory = params.get("category");
@@ -43,6 +44,49 @@
     const pageSize = notionApi.getPageSize?.() || 9;
     const validCategories = new Set([...categories.map((cat) => cat.name), "收藏"]);
     if (!validCategories.has(currentCategory)) currentCategory = "全部";
+
+    function clearDetailWarmup() {
+      if (detailWarmupHandle == null) return;
+
+      if ("cancelIdleCallback" in window) {
+        window.cancelIdleCallback(detailWarmupHandle);
+      } else {
+        clearTimeout(detailWarmupHandle);
+      }
+
+      detailWarmupHandle = null;
+    }
+
+    function canWarmArticleDetails() {
+      const connection =
+        navigator.connection ||
+        navigator.mozConnection ||
+        navigator.webkitConnection;
+
+      return !(connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType || ""));
+    }
+
+    function scheduleDetailWarmup(posts) {
+      clearDetailWarmup();
+
+      const firstPostId = posts?.[0]?.id;
+      if (!firstPostId || typeof notionApi.getPost !== "function" || !canWarmArticleDetails()) {
+        return;
+      }
+
+      const warmFirstPost = () => {
+        detailWarmupHandle = null;
+        notionApi.getPost(firstPostId).catch(() => {});
+      };
+
+      if ("requestIdleCallback" in window) {
+        detailWarmupHandle = window.requestIdleCallback(warmFirstPost, {
+          timeout: 1200,
+        });
+      } else {
+        detailWarmupHandle = window.setTimeout(warmFirstPost, 300);
+      }
+    }
 
     function updatePageUI() {
       const titleEl = document.querySelector(".page-title");
@@ -224,6 +268,7 @@
         emptyEl.style.display = "none";
         gridEl.innerHTML = data.results.map(renderCard).join("");
         renderPagination(data);
+        scheduleDetailWarmup(data.results);
 
         requestAnimationFrame(() => {
           window.initBlogCardReveal?.();
@@ -324,6 +369,7 @@
       paginationEl.removeEventListener("click", handlePaginationClick);
       gridEl.removeEventListener("click", handleGridClick);
       gridEl.removeEventListener("error", handleGridMediaError, true);
+      clearDetailWarmup();
     };
   }
 

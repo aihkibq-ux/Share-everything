@@ -10,6 +10,7 @@ const NotionAPI = (() => {
     pageSize: 9,
   };
   const REQUEST_TIMEOUT = 12000;
+  const POST_SUMMARY_CACHE_PREFIX = "notion_post_summary_";
 
   // ====== 分类固定列表（Notion 不提供动态获取接口） ======
   const CATEGORIES = [
@@ -25,6 +26,7 @@ const NotionAPI = (() => {
   const CACHE_TTL = 1000 * 60 * 30; // 30 分钟硬过期
   const STALE_TTL = 1000 * 60 * 5;  // 5 分钟后视为 stale，后台刷新
   const pendingRequests = new Map();
+  const postSummaryMemoryCache = new Map();
 
   function getCache(key) {
     try {
@@ -38,6 +40,63 @@ const NotionAPI = (() => {
     try {
       sessionStorage.setItem(key, JSON.stringify({ timestamp: Date.now(), data }));
     } catch (e) {}
+  }
+
+  function getPostSummaryCacheKey(pageId) {
+    return `${POST_SUMMARY_CACHE_PREFIX}${pageId}`;
+  }
+
+  function normalizePostSummary(post) {
+    if (!post?.id) return null;
+
+    return {
+      id: post.id,
+      title: post.title || "Untitled",
+      excerpt: post.excerpt || "",
+      category: post.category || "",
+      date: post.date || "",
+      readTime: post.readTime || "",
+      coverImage: post.coverImage || null,
+      coverEmoji: post.coverEmoji || "📝",
+      coverGradient: post.coverGradient || gradientForCategory(post.category || ""),
+      tags: Array.isArray(post.tags) ? [...post.tags] : [],
+      _searchText: post._searchText || "",
+    };
+  }
+
+  function storePostSummary(post) {
+    const summary = normalizePostSummary(post);
+    if (!summary) return null;
+
+    postSummaryMemoryCache.set(summary.id, summary);
+    setCache(getPostSummaryCacheKey(summary.id), summary);
+    return summary;
+  }
+
+  function primePostSummaries(posts) {
+    (posts || []).forEach((post) => {
+      storePostSummary(post);
+    });
+  }
+
+  function getPostSummary(pageId) {
+    if (!pageId) return null;
+
+    if (postSummaryMemoryCache.has(pageId)) {
+      return postSummaryMemoryCache.get(pageId);
+    }
+
+    const cached = getCache(getPostSummaryCacheKey(pageId));
+    if (!cached) return null;
+
+    const age = Date.now() - cached.timestamp;
+    if (age >= CACHE_TTL) return null;
+
+    const summary = normalizePostSummary(cached.data);
+    if (!summary) return null;
+
+    postSummaryMemoryCache.set(pageId, summary);
+    return summary;
   }
 
   function withPendingRequest(key, loader) {
@@ -65,6 +124,7 @@ const NotionAPI = (() => {
     if (cached) {
       const age = Date.now() - cached.timestamp;
       if (age < CACHE_TTL) {
+        primePostSummaries(cached.data);
         // 缓存未硬过期
         if (age > STALE_TTL) {
           // stale: 先返回旧数据，后台静默刷新
@@ -139,6 +199,7 @@ const NotionAPI = (() => {
       } while (startCursor);
 
       const mappedData = allPages.map(mapNotionPage);
+      primePostSummaries(mappedData);
       setCache(cacheKey, mappedData);
       return mappedData;
     });
@@ -171,6 +232,7 @@ const NotionAPI = (() => {
     if (cached) {
       const age = Date.now() - cached.timestamp;
       if (age < CACHE_TTL) {
+        storePostSummary(cached.data);
         if (age > STALE_TTL) {
           // stale: 后台静默刷新
           fetchPageRemote(pageId, cacheKey).catch(() => {});
@@ -199,16 +261,29 @@ const NotionAPI = (() => {
         return blocks;
       }
 
-      const [pageRes, blocksRes] = await Promise.all([
-        requestJson(`/pages/${pageId}`),
-        fetchAllBlockChildren(pageId),
-      ]);
+      const cachedSummary = getPostSummary(pageId);
+      const blocksPromise = fetchAllBlockChildren(pageId);
+
+      let summary = cachedSummary;
+      let blocksRes;
+
+      if (summary) {
+        blocksRes = await blocksPromise;
+      } else {
+        const [pageRes, fetchedBlocks] = await Promise.all([
+          requestJson(`/pages/${pageId}`),
+          blocksPromise,
+        ]);
+        summary = mapNotionPage(pageRes);
+        blocksRes = fetchedBlocks;
+      }
 
       const mappedData = {
-        ...mapNotionPage(pageRes),
+        ...summary,
         content: blocksRes.map(mapNotionBlock),
       };
 
+      storePostSummary(mappedData);
       setCache(cacheKey, mappedData);
       return mappedData;
     });

@@ -3,8 +3,6 @@
     const notionApi = window.NotionAPI;
     const bookmarkManager = window.BookmarkManager || null;
 
-    if (!notionApi) return null;
-
     const params = new URLSearchParams(window.location.search);
     const postId = params.get("id");
     const skeletonEl = document.getElementById("postSkeleton");
