@@ -590,16 +590,16 @@ body {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     width: 100%;
-    max-width: 372px;
-    gap: 9px;
+    max-width: 360px;
+    gap: 8px;
   }
 
   .hero-cta-group .btn {
     width: 100%;
-    min-height: 46px;
+    min-height: 44px;
     justify-content: center;
-    padding: 10px 0;
-    border-radius: 18px;
+    padding: 9px 0;
+    border-radius: 999px;
   }
 
   .hero-cta-group .btn svg {
@@ -1300,19 +1300,20 @@ body {
 @media (max-width: 768px) {
   body[data-page="blog"] .top-actions {
     top: auto;
-    bottom: calc(14px + env(safe-area-inset-bottom));
-    left: 14px;
-    right: 14px;
-    gap: 8px;
-    padding: 8px;
-    border-radius: 20px;
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    left: 28px;
+    right: 28px;
+    gap: 7px;
+    padding: 9px;
+    border-radius: 24px;
   }
 
   body[data-page="blog"] .action-btn {
     gap: 4px;
+    min-height: 40px;
     padding: 9px 8px;
-    border-radius: 14px;
-    font-size: 0.72rem;
+    border-radius: 999px;
+    font-size: 0.71rem;
   }
 
   body[data-page="blog"] .action-btn svg {
@@ -1322,7 +1323,7 @@ body {
 
   body[data-page="blog"] .page-container {
     padding-top: 92px;
-    padding-bottom: 128px;
+    padding-bottom: 138px;
   }
 
   .page-container,
@@ -1567,14 +1568,14 @@ body {
   }
 
   .hero-cta-group {
-    max-width: 324px;
-    gap: 7px;
+    max-width: 308px;
+    gap: 6px;
   }
 
   .hero-cta-group .btn {
-    min-height: 42px;
-    padding: 9px 0;
-    border-radius: 16px;
+    min-height: 40px;
+    padding: 8px 0;
+    border-radius: 999px;
   }
 
   .hero-cta-group .btn svg {
@@ -1602,18 +1603,20 @@ body {
   }
 
   body[data-page="blog"] .top-actions {
-    bottom: calc(12px + env(safe-area-inset-bottom));
-    left: 12px;
-    right: 12px;
-    gap: 7px;
-    padding: 7px;
-    border-radius: 18px;
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    left: 24px;
+    right: 24px;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 22px;
   }
 
   body[data-page="blog"] .action-btn {
     gap: 4px;
+    min-height: 38px;
     padding: 8px 6px;
-    font-size: 0.69rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
   }
 
   body[data-page="blog"] .action-btn svg {
@@ -1629,7 +1632,7 @@ body {
 
   body[data-page="blog"] .page-container {
     padding-top: 88px;
-    padding-bottom: 122px;
+    padding-bottom: 132px;
   }
 
   .blog-card-body {
