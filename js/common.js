@@ -9,7 +9,6 @@ const ctx = canvas ? canvas.getContext("2d") : null;
 let width, height;
 let particles = [];
 let rafId = null;
-let particleBootstrapTimer = null;
 let mouseX = 0,
   mouseY = 0;
 let targetMouseX = 0,
@@ -117,7 +116,6 @@ bucketKeys.forEach((c) => {
 
 let speedMultiplier = 1;
 let targetSpeedMultiplier = 1;
-let particlesBootstrapped = false;
 
 function drawParticlesFrame(advance = true) {
   if (!ctx || !width || !height) return;
@@ -163,13 +161,6 @@ function stopParticles() {
   }
 }
 
-function clearParticleBootstrapTimer() {
-  if (particleBootstrapTimer) {
-    clearTimeout(particleBootstrapTimer);
-    particleBootstrapTimer = null;
-  }
-}
-
 function animateParticles() {
   if (!ctx) return;
   drawParticlesFrame(true);
@@ -179,9 +170,10 @@ function animateParticles() {
 let resizeTimer = null;
 window.addEventListener("resize", () => {
   stopParticles();
-  clearParticleBootstrapTimer();
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
+    resize();
+
     // Update particle count on resize in case of orientation change
     const newCount = window.innerWidth < 768 ? 120 : 350;
     if (newCount !== particleCount) {
@@ -194,89 +186,32 @@ window.addEventListener("resize", () => {
       });
     }
 
-    bootstrapParticles(true);
+    initParticles();
+    animateParticles();
   }, 300);
 });
 
-// Smooth hyper-drive burst (mouse only — avoid touch-scroll conflict)
-window.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse") targetSpeedMultiplier = 20; });
-window.addEventListener("pointerup", (e) => { if (e.pointerType === "mouse") targetSpeedMultiplier = 1; });
-window.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") targetSpeedMultiplier = 1; });
-
-// 尊重用户的减少动画偏好
-const reducedMotionMedia = window.matchMedia("(prefers-reduced-motion: reduce)");
-let prefersReducedMotion = reducedMotionMedia.matches;
-
-// 使用 rAF 确保浏览器完成首次布局后再初始化粒子，
-// 避免 width/height 为 0 导致粒子集中在不可见区域
-function bootstrapParticles(force = false) {
-  if (!ctx) return false;
-
-  stopParticles();
-  clearParticleBootstrapTimer();
-  const hasViewport = resize();
-  if (!hasViewport) return false;
-
-  if (force || !particlesBootstrapped || particles.length !== particleCount) {
-    initParticles();
-    particlesBootstrapped = true;
-  }
-
-  drawParticlesFrame(false);
-  if (!prefersReducedMotion) animateParticles();
-  return true;
-}
-
-function scheduleParticleBootstrap(force = false, attempt = 0) {
-  if (!ctx) return;
-
-  requestAnimationFrame(() => {
-    const didBootstrap = bootstrapParticles(force);
-
-    // Some browsers can briefly report a zero-sized viewport on first open.
-    // Retry a few times so the particle layer does not stay blank until resize.
-    if (!didBootstrap && attempt < 6) {
-      particleBootstrapTimer = setTimeout(() => {
-        particleBootstrapTimer = null;
-        scheduleParticleBootstrap(true, attempt + 1);
-      }, 80 + attempt * 80);
-    }
-  });
-}
-
-// 不等 window.load，避免外部字体等资源卡住时粒子迟迟不启动
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => scheduleParticleBootstrap(), {
-    once: true,
-  });
-} else {
-  scheduleParticleBootstrap();
-}
-
-// 资源全部完成后再做一次尺寸校准
-window.addEventListener("load", () => scheduleParticleBootstrap(true), {
-  once: true,
+// Smooth hyper-drive burst
+window.addEventListener("mousedown", () => (targetSpeedMultiplier = 20));
+window.addEventListener("mouseup", () => (targetSpeedMultiplier = 1));
+window.addEventListener("mouseleave", () => (targetSpeedMultiplier = 1));
+window.addEventListener("touchstart", () => (targetSpeedMultiplier = 20), {
+  passive: true,
+});
+window.addEventListener("touchend", () => (targetSpeedMultiplier = 1), {
+  passive: true,
 });
 
-window.addEventListener("pageshow", () => {
-  if (!particlesBootstrapped || !rafId) {
-    scheduleParticleBootstrap(true);
-  }
-});
-
-reducedMotionMedia.addEventListener?.("change", (event) => {
-  prefersReducedMotion = event.matches;
-  if (!particlesBootstrapped) return;
-  bootstrapParticles(true);
-});
+resize();
+initParticles();
+animateParticles();
 
 // 页面不可见时暂停粒子动画，节省 CPU/GPU
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     stopParticles();
-    clearParticleBootstrapTimer();
-  } else if (ctx) {
-    scheduleParticleBootstrap(!particlesBootstrapped || !rafId);
+  } else if (!rafId && ctx) {
+    animateParticles();
   }
 });
 
