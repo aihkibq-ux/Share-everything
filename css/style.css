@@ -1322,7 +1322,7 @@ body {
   }
 
   body[data-page="blog"] .page-container {
-    padding-top: 92px;
+    padding-top: 84px;
     padding-bottom: 138px;
   }
 
@@ -1335,34 +1335,46 @@ body {
     margin-bottom: 32px;
   }
 
+  body[data-page="blog"] .page-header {
+    margin-bottom: 24px;
+  }
+
   .page-title {
     font-size: clamp(2.3rem, 10vw, 3.4rem);
   }
 
   .blog-search {
-    max-width: 560px;
-    margin-bottom: 28px;
+    width: 90%;
+    max-width: 504px;
+    margin: 0 auto 24px;
   }
 
   .blog-search input {
-    min-height: 54px;
-    padding: 16px 50px 16px 20px;
-    border-radius: 22px;
-    font-size: 0.95rem;
+    min-height: 49px;
+    padding: 14px 46px 14px 18px;
+    border-radius: 20px;
+    font-size: 0.86rem;
     background: rgba(255, 255, 255, 0.06);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.06),
       0 10px 28px rgba(0, 0, 0, 0.18);
   }
 
+  .blog-search .search-icon {
+    right: 15px;
+    width: 16px;
+    height: 16px;
+  }
+
   .blog-filters {
-    width: 100%;
-    max-width: 560px;
+    width: 90%;
+    max-width: 504px;
     justify-content: flex-start;
     flex-wrap: nowrap;
     overflow-x: auto;
-    margin-bottom: 28px;
-    padding: 0 2px 8px;
+    margin: 0 auto 24px;
+    padding: 0 2px 6px;
+    gap: 10px;
     scrollbar-width: none;
     -ms-overflow-style: none;
     scroll-snap-type: x proximity;
@@ -1374,46 +1386,76 @@ body {
 
   .filter-btn {
     flex: 0 0 auto;
-    padding: 10px 16px;
+    padding: 9px 14px;
+    font-size: 0.77rem;
     scroll-snap-align: start;
   }
 
   .blog-grid {
-    grid-template-columns: 1fr;
-    gap: 18px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
     max-width: 560px;
   }
 
   .blog-card {
-    border-radius: 24px;
+    border-radius: 20px;
   }
 
   .blog-card-cover-placeholder {
-    height: clamp(180px, 48vw, 220px);
+    height: clamp(112px, 31vw, 148px);
   }
 
   .blog-card-body {
-    padding: 22px 20px 20px;
+    padding: 16px 14px 14px;
+  }
+
+  .blog-card-category {
+    margin-bottom: 10px;
+    padding: 3px 10px;
+    font-size: 0.62rem;
   }
 
   .blog-card-title {
-    font-size: 1.12rem;
+    margin-bottom: 8px;
+    font-size: 0.98rem;
+    line-height: 1.35;
   }
 
   .blog-card-excerpt {
-    margin-bottom: 18px;
+    margin-bottom: 14px;
+    font-size: 0.78rem;
+    line-height: 1.58;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
   }
 
   .blog-card-meta {
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 10px;
+    font-size: 0.72rem;
+  }
+
+  .blog-card-meta svg {
+    width: 12px;
+    height: 12px;
+    margin-right: 3px;
   }
 
   .card-bookmark-btn {
-    width: 34px;
-    height: 34px;
-    border-radius: 12px;
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
     background: rgba(255, 255, 255, 0.04);
+  }
+
+  .pagination {
+    margin-top: 30px;
+    gap: 10px;
+  }
+
+  .page-btn {
+    width: 40px;
+    height: 40px;
   }
 
   .pagination {
@@ -1631,16 +1673,99 @@ body {
   }
 
   body[data-page="blog"] .page-container {
-    padding-top: 88px;
+    padding-top: 80px;
     padding-bottom: 132px;
   }
 
+  body[data-page="blog"] .page-header {
+    margin-bottom: 20px;
+  }
+
+  .blog-search {
+    margin-bottom: 18px;
+  }
+
+  .blog-search input {
+    min-height: 45px;
+    padding: 12px 42px 12px 16px;
+    border-radius: 18px;
+    font-size: 0.82rem;
+  }
+
+  .blog-search .search-icon {
+    right: 13px;
+    width: 15px;
+    height: 15px;
+  }
+
+  .blog-filters {
+    margin-bottom: 18px;
+    padding-bottom: 4px;
+    gap: 8px;
+  }
+
+  .filter-btn {
+    padding: 8px 12px;
+    font-size: 0.72rem;
+  }
+
+  .blog-grid {
+    gap: 10px;
+  }
+
+  .blog-card {
+    border-radius: 18px;
+  }
+
+  .blog-card-cover-placeholder {
+    height: clamp(102px, 29vw, 126px);
+  }
+
   .blog-card-body {
-    padding: 20px 18px 18px;
+    padding: 14px 12px 12px;
+  }
+
+  .blog-card-category {
+    margin-bottom: 8px;
+    padding: 3px 9px;
+    font-size: 0.58rem;
   }
 
   .blog-card-title {
-    font-size: 1.05rem;
+    font-size: 0.9rem;
+    margin-bottom: 7px;
+  }
+
+  .blog-card-excerpt {
+    margin-bottom: 12px;
+    font-size: 0.72rem;
+    line-height: 1.5;
+  }
+
+  .blog-card-meta {
+    gap: 8px;
+    font-size: 0.67rem;
+  }
+
+  .blog-card-meta svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  .card-bookmark-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 9px;
+  }
+
+  .pagination {
+    margin-top: 24px;
+    gap: 8px;
+  }
+
+  .page-btn {
+    width: 38px;
+    height: 38px;
   }
 
   .post-title {
