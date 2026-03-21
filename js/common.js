@@ -106,19 +106,23 @@ bucketKeys.forEach((c) => {
 
 let speedMultiplier = 1;
 let targetSpeedMultiplier = 1;
+let particlesBootstrapped = false;
 
-function animateParticles() {
-  if (!ctx) return;
+function drawParticlesFrame(advance = true) {
+  if (!ctx || !width || !height) return;
   ctx.clearRect(0, 0, width, height);
-  mouseX += (targetMouseX - mouseX) * 0.05;
-  mouseY += (targetMouseY - mouseY) * 0.05;
-  speedMultiplier += (targetSpeedMultiplier - speedMultiplier) * 0.08;
+
+  if (advance) {
+    mouseX += (targetMouseX - mouseX) * 0.05;
+    mouseY += (targetMouseY - mouseY) * 0.05;
+    speedMultiplier += (targetSpeedMultiplier - speedMultiplier) * 0.08;
+  }
 
   // Reset counters for this frame
   bucketKeys.forEach((c) => (bucketCounts[c] = 0));
 
   for (let i = 0; i < particleCount; i++) {
-    particles[i].update();
+    if (advance) particles[i].update();
     const d = particles[i].getDrawData(drawPool[i]);
     const c = d.color;
     bucketArrays[c][bucketCounts[c]++] = d;
@@ -139,19 +143,28 @@ function animateParticles() {
     }
   }
   ctx.globalAlpha = 1;
+}
+
+function stopParticles() {
+  if (rafId) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+}
+
+function animateParticles() {
+  if (!ctx) return;
+  drawParticlesFrame(true);
   rafId = requestAnimationFrame(animateParticles);
 }
 
 let resizeTimer = null;
 window.addEventListener("resize", () => {
-  if (rafId) {
-    cancelAnimationFrame(rafId);
-    rafId = null;
-  }
+  stopParticles();
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     resize();
-    
+
     // Update particle count on resize in case of orientation change
     const newCount = window.innerWidth < 768 ? 120 : 350;
     if (newCount !== particleCount) {
@@ -165,7 +178,8 @@ window.addEventListener("resize", () => {
     }
 
     initParticles();
-    animateParticles();
+    drawParticlesFrame(false);
+    if (!prefersReducedMotion) animateParticles();
   }, 300);
 });
 
@@ -175,34 +189,62 @@ window.addEventListener("pointerup", (e) => { if (e.pointerType === "mouse") tar
 window.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") targetSpeedMultiplier = 1; });
 
 // 尊重用户的减少动画偏好
-const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const reducedMotionMedia = window.matchMedia("(prefers-reduced-motion: reduce)");
+let prefersReducedMotion = reducedMotionMedia.matches;
 
 // 使用 rAF 确保浏览器完成首次布局后再初始化粒子，
 // 避免 width/height 为 0 导致粒子集中在不可见区域
-function bootstrapParticles() {
+function bootstrapParticles(force = false) {
+  if (!ctx) return;
+
+  stopParticles();
   resize();
-  if (!prefersReducedMotion) {
+
+  if (force || !particlesBootstrapped || particles.length !== particleCount) {
     initParticles();
-    animateParticles();
+    particlesBootstrapped = true;
   }
+
+  drawParticlesFrame(false);
+  if (!prefersReducedMotion) animateParticles();
 }
 
-// 如果文档尚未完全加载，等待 load 事件；否则直接用 rAF 延迟一帧
-if (document.readyState === "complete") {
-  requestAnimationFrame(bootstrapParticles);
-} else {
-  window.addEventListener("load", () => requestAnimationFrame(bootstrapParticles));
+function scheduleParticleBootstrap(force = false) {
+  requestAnimationFrame(() => bootstrapParticles(force));
 }
+
+// 不等 window.load，避免外部字体等资源卡住时粒子迟迟不启动
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => scheduleParticleBootstrap(), {
+    once: true,
+  });
+} else {
+  scheduleParticleBootstrap();
+}
+
+// 资源全部完成后再做一次尺寸校准
+window.addEventListener("load", () => scheduleParticleBootstrap(true), {
+  once: true,
+});
+
+reducedMotionMedia.addEventListener?.("change", (event) => {
+  prefersReducedMotion = event.matches;
+  if (!particlesBootstrapped) return;
+  bootstrapParticles(true);
+});
 
 // 页面不可见时暂停粒子动画，节省 CPU/GPU
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
-    if (rafId) {
-      cancelAnimationFrame(rafId);
-      rafId = null;
+    stopParticles();
+  } else if (ctx) {
+    if (!particlesBootstrapped) {
+      bootstrapParticles(true);
+      return;
     }
-  } else if (!rafId && ctx) {
-    animateParticles();
+
+    drawParticlesFrame(false);
+    if (!prefersReducedMotion && !rafId) animateParticles();
   }
 });
 
@@ -215,8 +257,10 @@ document.addEventListener("mousemove", (e) => {
   const clientY = e.clientY;
 
   // Particles Parallax Offset
-  targetMouseX = (clientX - width / 2) * 2;
-  targetMouseY = (clientY - height / 2) * 2;
+  if (width && height) {
+    targetMouseX = (clientX - width / 2) * 2;
+    targetMouseY = (clientY - height / 2) * 2;
+  }
 
   if (mouseAF) return; // Debounce RAF
   mouseAF = requestAnimationFrame(() => {
