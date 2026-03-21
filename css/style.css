@@ -577,16 +577,21 @@ body {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     width: 100%;
-    max-width: 420px;
-    gap: 12px;
+    max-width: 390px;
+    gap: 10px;
   }
 
-  .btn {
+  .hero-cta-group .btn {
     width: 100%;
-    min-height: 56px;
+    min-height: 50px;
     justify-content: center;
-    padding: 14px 0;
-    border-radius: 22px;
+    padding: 12px 0;
+    border-radius: 20px;
+  }
+
+  .hero-cta-group .btn svg {
+    width: 16px;
+    height: 16px;
   }
 
   .btn-tooltip {
@@ -1505,12 +1510,19 @@ body {
   }
 
   .hero-cta-group {
-    gap: 10px;
+    max-width: 348px;
+    gap: 8px;
   }
 
-  .btn {
-    min-height: 54px;
-    border-radius: 20px;
+  .hero-cta-group .btn {
+    min-height: 46px;
+    padding: 10px 0;
+    border-radius: 18px;
+  }
+
+  .hero-cta-group .btn svg {
+    width: 15px;
+    height: 15px;
   }
 
   .top-actions {
