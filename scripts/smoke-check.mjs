@@ -22,22 +22,33 @@ function expectIncludes(source, needle, message) {
   "js/common.js",
   "js/blog-page.js",
   "js/bookmark.js",
+  "js/font-loader.js",
+  "js/index-page.js",
+  "js/notion-api.js",
   "js/post-page.js",
   "api/notion.js",
+  "api/post.js",
+  "api/sitemap.js",
+  "server/notion-server.js",
 ].forEach(checkSyntax);
 
 const indexHtml = read("index.html");
 const blogHtml = read("blog.html");
 const postHtml = read("post.html");
+const vercelJson = read("vercel.json");
 const commonJs = read("js/common.js");
 const blogPageJs = read("js/blog-page.js");
 const bookmarkJs = read("js/bookmark.js");
+const indexPageJs = read("js/index-page.js");
 const notionApiJs = read("js/notion-api.js");
 const postPageJs = read("js/post-page.js");
+const apiPostJs = read("api/post.js");
+const apiSitemapJs = read("api/sitemap.js");
 
 expectIncludes(indexHtml, 'property="og:image"', "index.html should declare og:image");
 expectIncludes(blogHtml, 'property="og:image"', "blog.html should declare og:image");
 expectIncludes(postHtml, 'property="og:image"', "post.html should declare og:image");
+expectIncludes(postHtml, 'rel="canonical"', "post.html should declare a fallback canonical link");
 expectIncludes(indexHtml, "data-page-focus", "index.html should mark a focus target");
 expectIncludes(blogHtml, "data-page-focus", "blog.html should mark a focus target");
 expectIncludes(blogHtml, 'id="blogStatus"', "blog.html should include the live status region");
@@ -48,13 +59,27 @@ expectIncludes(commonJs, 'property="og:image"', "common.js should update og:imag
 expectIncludes(commonJs, "focusSpaContent", "common.js should expose SPA focus management");
 expectIncludes(commonJs, "hasFreshPrefetch", "common.js should expire stale prefetched routes");
 expectIncludes(commonJs, "resolveShareImageUrl", "common.js should normalize stable share images");
+expectIncludes(commonJs, "getPostIdFromUrl", "common.js should expose canonical post URL helpers");
 expectIncludes(blogPageJs, 'class="blog-card-link"', "blog cards should render a dedicated link layer");
+expectIncludes(blogPageJs, 'siteUtils.buildPostPath', "blog cards should link to canonical /posts/:id routes");
 expectIncludes(blogPageJs, 'data-post-tags="${serializedTags}"', "blog cards should serialize tags for bookmark fallback");
 expectIncludes(blogPageJs, 'aria-pressed="${bookmarked ? "true" : "false"}"', "bookmark buttons should expose pressed state");
 expectIncludes(blogPageJs, "announceStatus(", "blog page should announce result updates");
+assert.ok(
+  !blogPageJs.includes("await bookmarkManager.hydrateMissingMetadata"),
+  "blog page should hydrate legacy bookmark metadata in the background",
+);
 expectIncludes(bookmarkJs, "parseSerializedTags", "bookmark fallback should recover serialized tags");
 expectIncludes(bookmarkJs, "hydrateMissingMetadata", "bookmark manager should hydrate legacy metadata");
 expectIncludes(notionApiJs, "collectManagedCacheEntries", "notion cache should evict older entries on quota pressure");
+expectIncludes(indexPageJs, "function navigateTo(url)", "index page should provide a navigation fallback helper");
+expectIncludes(indexPageJs, "window.location.href = url", "index page should fall back to full navigation");
 expectIncludes(postPageJs, 'window.StructuredData?.set?.("post-article"', "post page should publish article structured data");
+expectIncludes(postPageJs, "initialPostData", "post page should reuse server-rendered post payloads");
+expectIncludes(apiPostJs, 'upsertStructuredDataScript(html, "post-article"', "article HTML route should emit structured data");
+expectIncludes(apiPostJs, 'id="initialPostData"', "article HTML route should emit initial post data");
+expectIncludes(apiSitemapJs, "buildPostUrl", "dynamic sitemap should include article routes");
+expectIncludes(vercelJson, '"/posts/:id"', "Vercel should rewrite canonical article routes");
+expectIncludes(vercelJson, '"/sitemap.xml"', "Vercel should serve a dynamic sitemap");
 
 console.log("Smoke check passed.");

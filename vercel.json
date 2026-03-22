@@ -1,5 +1,8 @@
 {
   "rewrites": [
+    { "source": "/sitemap.xml", "destination": "/api/sitemap" },
+    { "source": "/posts/:id", "destination": "/api/post?id=:id" },
+    { "source": "/post.html", "destination": "/api/post" },
     { "source": "/api/:path*", "destination": "/api/notion" }
   ],
   "headers": [

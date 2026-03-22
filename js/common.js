@@ -337,8 +337,45 @@ function resolveShareImageUrl(candidate, fallback = null) {
   return safeUrl;
 }
 
+function normalizePostId(value) {
+  if (value == null) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+function getPostIdFromUrl(url = window.location.href) {
+  try {
+    const resolved = new URL(url, window.location.origin);
+    const pathMatch = resolved.pathname.match(/^\/posts\/([^/?#]+)/);
+    if (pathMatch?.[1]) {
+      return normalizePostId(decodeURIComponent(pathMatch[1]));
+    }
+
+    if (resolved.pathname.endsWith("/post.html")) {
+      return normalizePostId(resolved.searchParams.get("id"));
+    }
+
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function buildPostPath(postId) {
+  const normalizedPostId = normalizePostId(postId);
+  return normalizedPostId ? `/posts/${encodeURIComponent(normalizedPostId)}` : "/post.html";
+}
+
+function buildPostUrl(postId) {
+  return new URL(buildPostPath(postId), window.location.origin).href;
+}
+
 window.SiteUtils = Object.freeze({
+  buildPostPath,
+  buildPostUrl,
   createMediaQueryList,
+  getPostIdFromUrl,
+  normalizePostId,
   sanitizeImageUrl,
   sanitizeCoverBackground,
   resolveShareImageUrl,
@@ -765,6 +802,7 @@ const PageRuntime = (() => {
 
     if (normalizedPath.endsWith("/index.html")) return "index";
     if (normalizedPath.endsWith("/blog.html")) return "blog";
+    if (pathname.startsWith("/posts/")) return "post";
     if (normalizedPath.endsWith("/post.html")) return "post";
     return null;
   }
@@ -842,15 +880,18 @@ const SPARouter = (() => {
 
   function getRouteKey(url) {
     const resolved = resolveUrl(url);
+    const postId = getPostIdFromUrl(resolved.href);
+    if (postId) {
+      return buildPostUrl(postId);
+    }
     resolved.hash = "";
     return resolved.href;
   }
 
   function getPageCacheKey(url) {
-    const resolved = resolveUrl(url);
-    resolved.hash = "";
-
-    if (PageRuntime.getPageIdFromUrl(resolved.href)) {
+    const resolved = resolveUrl(getRouteKey(url));
+    const pageId = PageRuntime.getPageIdFromUrl(resolved.href);
+    if (pageId && pageId !== "post") {
       resolved.search = "";
     }
 
@@ -978,7 +1019,7 @@ const SPARouter = (() => {
     if (!link?.href || !link.href.startsWith(window.location.origin)) return;
     if (link.dataset.preloaded === "true") return;
 
-    const id = new URL(link.href).searchParams.get("id");
+    const id = getPostIdFromUrl(link.href);
     if (!id || !window.NotionAPI?.getPost) return;
 
     link.dataset.preloaded = "true";
@@ -1079,6 +1120,7 @@ const SPARouter = (() => {
         el.style.transform = "none";
       });
 
+      // ⑥ 初始化页面脚本
       PageRuntime.initializePage(targetPageId);
 
       // ⑦ 滚动到顶部

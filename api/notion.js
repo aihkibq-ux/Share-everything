@@ -2,7 +2,7 @@
  * Vercel Serverless Function — Notion API 代理
  *
  * 替代 Cloudflare Worker，解决大陆 Cloudflare IP 不可达的问题。
- * 通过 vercel.json rewrites，所有 /api/* 请求都被路由到此函数。
+ * 通过 vercel.json rewrites，/api/:path* 的 Notion 代理请求会被路由到此函数。
  * Vercel rewrites 会把捕获的 :path* 作为 req.query.path 传入。
  *
  * 环境变量（在 Vercel Dashboard → Settings → Environment Variables 中设置）：
@@ -16,6 +16,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
 ];
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000);
 const RATE_LIMIT_MAX_REQUESTS = Number(process.env.RATE_LIMIT_MAX_REQUESTS || 120);
+const MAX_RATE_LIMIT_ENTRIES = Number(process.env.RATE_LIMIT_MAX_ENTRIES || 10_000);
 const NOTION_ID_PATTERN = /^[0-9a-fA-F-]{32,36}$/;
 const BLOCK_CHILDREN_QUERY_PARAMS = new Set(["page_size", "start_cursor"]);
 const rateLimitStore = new Map();
@@ -179,22 +180,43 @@ function buildAllowedQueryString(query, pathKind) {
   return queryString ? `?${queryString}` : "";
 }
 
+function pruneRateLimitStore(now) {
+  for (const [ip, entry] of rateLimitStore.entries()) {
+    if (now - entry.windowStart >= RATE_LIMIT_WINDOW_MS) {
+      rateLimitStore.delete(ip);
+    }
+  }
+
+  if (rateLimitStore.size <= MAX_RATE_LIMIT_ENTRIES) {
+    return;
+  }
+
+  const overflowCount = rateLimitStore.size - MAX_RATE_LIMIT_ENTRIES;
+  let removed = 0;
+  for (const ip of rateLimitStore.keys()) {
+    rateLimitStore.delete(ip);
+    removed += 1;
+    if (removed >= overflowCount) {
+      break;
+    }
+  }
+}
+
 function isRateLimited(req) {
   const now = Date.now();
   const clientIp = getClientIp(req);
+  pruneRateLimitStore(now);
   const current = rateLimitStore.get(clientIp);
 
   if (!current || now - current.windowStart >= RATE_LIMIT_WINDOW_MS) {
     rateLimitStore.set(clientIp, { count: 1, windowStart: now });
   } else {
     current.count += 1;
+    rateLimitStore.delete(clientIp);
+    rateLimitStore.set(clientIp, current);
   }
 
-  for (const [ip, entry] of rateLimitStore.entries()) {
-    if (now - entry.windowStart >= RATE_LIMIT_WINDOW_MS) {
-      rateLimitStore.delete(ip);
-    }
-  }
+  pruneRateLimitStore(now);
 
   return rateLimitStore.get(clientIp)?.count > RATE_LIMIT_MAX_REQUESTS;
 }

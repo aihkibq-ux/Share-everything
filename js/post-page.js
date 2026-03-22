@@ -4,9 +4,6 @@
     const siteUtils = window.SiteUtils || {};
     const bookmarkManager = window.BookmarkManager || null;
     const defaultShareImageUrl = new URL("favicon.png?v=2", window.location.origin).href;
-
-    const params = new URLSearchParams(window.location.search);
-    const postId = params.get("id");
     const skeletonEl = document.getElementById("postSkeleton");
     const contentEl = document.getElementById("postContent");
     const emptyEl = document.getElementById("postEmpty");
@@ -25,6 +22,53 @@
       return null;
     }
 
+    function getCurrentPostId() {
+      if (typeof siteUtils.getPostIdFromUrl === "function") {
+        return siteUtils.getPostIdFromUrl(window.location.href);
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      return params.get("id");
+    }
+
+    function readInitialPostData() {
+      const script = document.getElementById("initialPostData");
+      if (!(script instanceof HTMLScriptElement) || !script.textContent) {
+        return null;
+      }
+
+      try {
+        return JSON.parse(script.textContent);
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function getCanonicalPostUrl(postId) {
+      if (typeof siteUtils.buildPostUrl === "function") {
+        return siteUtils.buildPostUrl(postId);
+      }
+
+      return new URL(`/posts/${encodeURIComponent(postId)}`, window.location.origin).href;
+    }
+
+    function syncCanonicalLocation(postId) {
+      const canonicalUrl = new URL(getCanonicalPostUrl(postId));
+      const nextUrl = new URL(canonicalUrl.href);
+      const currentUrl = new URL(window.location.href);
+
+      if (currentUrl.hash) {
+        nextUrl.hash = currentUrl.hash;
+      }
+
+      if (nextUrl.href !== currentUrl.href) {
+        history.replaceState(history.state, "", nextUrl.href);
+      }
+
+      return canonicalUrl;
+    }
+
+    const postId = getCurrentPostId();
     const bookmarkElements = [fab, navBookmark].filter(Boolean);
     const mobileNavQuery =
       typeof siteUtils.createMediaQueryList === "function"
@@ -208,7 +252,15 @@
       }
 
       try {
-        const post = await notionApi.getPost(postId);
+        const initialPostData = readInitialPostData();
+        const normalizedInitialPostId =
+          typeof siteUtils.normalizePostId === "function"
+            ? siteUtils.normalizePostId(initialPostData?.id)
+            : initialPostData?.id || null;
+        const hasMatchingInitialData = normalizedInitialPostId === postId;
+        const post = hasMatchingInitialData
+          ? initialPostData
+          : await notionApi.getPost(postId);
         if (isDisposed) return;
 
         if (!post) {
@@ -216,14 +268,20 @@
           return;
         }
 
+        const canonicalUrl = syncCanonicalLocation(post.id);
+        const structuredDataImage =
+          typeof siteUtils.resolveShareImageUrl === "function"
+            ? siteUtils.resolveShareImageUrl(post.coverImage, defaultShareImageUrl)
+            : defaultShareImageUrl;
         const title = `${post.title} — Share Everything`;
         const description = post.excerpt || post.title;
         if (typeof window.updateSeoMeta === "function") {
           window.updateSeoMeta({
             title,
             description,
-            url: window.location.href,
-            ogImage: post.coverImage || undefined,
+            url: canonicalUrl.href,
+            canonicalUrl: canonicalUrl.href,
+            ogImage: structuredDataImage,
             ogImageAlt: post.title,
           });
         } else {
@@ -236,48 +294,48 @@
 
         const catColor = notionApi.getCategoryColor(post.category);
         const esc = notionApi.escapeHtml;
-        const renderedContent = notionApi.renderBlocks(post.content || []);
+        const shouldReuseServerMarkup = hasMatchingInitialData && contentEl.childElementCount > 0;
+        if (!shouldReuseServerMarkup) {
+          const renderedContent =
+            typeof post.renderedContent === "string" && post.renderedContent
+              ? post.renderedContent
+              : notionApi.renderBlocks(post.content || []);
 
-        contentEl.innerHTML = `
-          <div class="post-header">
-            <div class="post-category" style="background: ${catColor.bg}; color: ${catColor.color}; border: 1px solid ${catColor.border};">
-              ${esc(post.category)}
+          contentEl.innerHTML = `
+            <div class="post-header">
+              <div class="post-category" style="background: ${catColor.bg}; color: ${catColor.color}; border: 1px solid ${catColor.border};">
+                ${esc(post.category)}
+              </div>
+              <h1 class="post-title" data-page-focus>${esc(post.title)}</h1>
+              <div class="post-meta">
+                <span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  </svg>
+                  ${esc(post.date)}
+                </span>
+                <span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                  ${esc(post.readTime)}
+                </span>
+                ${Array.isArray(post.tags) && post.tags.length > 0 ? `<span>${post.tags.map((tag) => `#${esc(tag)}`).join(" ")}</span>` : ""}
+              </div>
             </div>
-            <h1 class="post-title" data-page-focus>${esc(post.title)}</h1>
-            <div class="post-meta">
-              <span>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                  <line x1="16" y1="2" x2="16" y2="6"></line>
-                  <line x1="8" y1="2" x2="8" y2="6"></line>
-                  <line x1="3" y1="10" x2="21" y2="10"></line>
-                </svg>
-                ${esc(post.date)}
-              </span>
-              <span>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <polyline points="12 6 12 12 16 14"></polyline>
-                </svg>
-                ${esc(post.readTime)}
-              </span>
-              ${Array.isArray(post.tags) && post.tags.length > 0 ? `<span>${post.tags.map((tag) => `#${esc(tag)}`).join(" ")}</span>` : ""}
+            <div class="post-content">
+              ${renderedContent}
             </div>
-          </div>
-          <div class="post-content">
-            ${renderedContent}
-          </div>
-        `;
+          `;
+        }
 
         skeletonEl.style.display = "none";
         contentEl.style.display = "block";
-        contentEl.style.animation = "fadeInUp 0.6s ease both";
-        const canonicalUrl = new URL(window.location.href);
-        canonicalUrl.hash = "";
-        const structuredDataImage =
-          typeof siteUtils.resolveShareImageUrl === "function"
-            ? siteUtils.resolveShareImageUrl(post.coverImage, defaultShareImageUrl)
-            : defaultShareImageUrl;
+        contentEl.style.animation = shouldReuseServerMarkup ? "" : "fadeInUp 0.6s ease both";
         window.StructuredData?.set?.("post-article", {
           "@context": "https://schema.org",
           "@type": "Article",

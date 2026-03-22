@@ -10,10 +10,18 @@
       return null;
     }
 
+    function navigateTo(url) {
+      if (window.SPARouter?.navigate) {
+        window.SPARouter.navigate(url);
+      } else {
+        window.location.href = url;
+      }
+    }
+
     function executeSearch() {
       const query = searchInput.value.trim();
       if (query) {
-        window.SPARouter?.navigate(`blog.html?search=${encodeURIComponent(query)}`);
+        navigateTo(`blog.html?search=${encodeURIComponent(query)}`);
       }
     }
 
@@ -24,15 +32,15 @@
     }
 
     function handleHomeClick() {
-      window.SPARouter?.navigate("blog.html");
+      navigateTo("blog.html");
     }
 
     function handleStartClick() {
-      window.SPARouter?.navigate("blog.html?category=精选");
+      navigateTo("blog.html?category=精选");
     }
 
     function handleWikiClick() {
-      window.SPARouter?.navigate("blog.html?category=收藏");
+      navigateTo("blog.html?category=收藏");
     }
 
     searchInput.addEventListener("keydown", handleSearchKeyDown);

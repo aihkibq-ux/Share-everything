@@ -37,6 +37,8 @@
     let revealFrame = null;
     let cleanupCardReveal = null;
     let statusAnnouncementHandle = null;
+    let metadataHydrationTask = null;
+    let isDisposed = false;
 
     const params = new URLSearchParams(window.location.search);
     if (params.get("category")) currentCategory = params.get("category");
@@ -104,6 +106,24 @@
 
     function setGridBusy(isBusy) {
       gridEl.setAttribute("aria-busy", isBusy ? "true" : "false");
+    }
+
+    function scheduleLegacyMetadataHydration() {
+      if (currentCategory !== "收藏") return;
+      if (metadataHydrationTask) return;
+      if (typeof bookmarkManager.hasLegacyMetadata !== "function") return;
+      if (!bookmarkManager.hasLegacyMetadata()) return;
+
+      metadataHydrationTask = Promise.resolve(bookmarkManager.hydrateMissingMetadata?.())
+        .then((didHydrate) => {
+          if (didHydrate && !isDisposed && currentCategory === "收藏") {
+            renderPosts();
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          metadataHydrationTask = null;
+        });
     }
 
     function buildResultsAnnouncement(data) {
@@ -298,7 +318,10 @@
         typeof siteUtils.sanitizeImageUrl === "function"
           ? siteUtils.sanitizeImageUrl(post.coverImage)
           : null;
-      const safePostUrl = `post.html?id=${encodeURIComponent(post.id)}`;
+      const safePostUrl =
+        typeof siteUtils.buildPostPath === "function"
+          ? siteUtils.buildPostPath(post.id)
+          : `/posts/${encodeURIComponent(post.id)}`;
       const serializedTags = esc(JSON.stringify(Array.isArray(post.tags) ? post.tags : []));
       const bookmarkTitle = bookmarked ? "取消收藏" : "收藏";
       const bookmarkAriaLabel = `${bookmarkTitle}文章：${post.title || "Untitled"}`;
@@ -369,9 +392,7 @@
         let data;
 
         if (currentCategory === "收藏") {
-          if (typeof bookmarkManager.hasLegacyMetadata === "function" && bookmarkManager.hasLegacyMetadata()) {
-            await bookmarkManager.hydrateMissingMetadata?.();
-          }
+          scheduleLegacyMetadataHydration();
 
           let bookmarks = bookmarkManager.getAll();
 
@@ -532,6 +553,7 @@
     renderPosts();
 
     return () => {
+      isDisposed = true;
       renderToken += 1;
       clearTimeout(searchDebounce);
       searchDebounce = null;
