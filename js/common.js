@@ -286,6 +286,33 @@ function createMediaQueryList(query) {
   };
 }
 
+function sanitizeImageUrl(candidate) {
+  if (!candidate || typeof candidate !== "string") return null;
+
+  try {
+    const parsed = new URL(candidate, window.location.origin);
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function sanitizeCoverBackground(value, fallback = null) {
+  if (typeof value !== "string") return fallback;
+
+  const trimmed = value.trim();
+  const isGradient = /^(linear-gradient|radial-gradient)\([#(),.%\sa-zA-Z0-9+-]+\)$/.test(trimmed);
+  if (!trimmed || !isGradient) return fallback;
+  if (trimmed.includes(";") || /url\s*\(/i.test(trimmed)) return fallback;
+  return trimmed;
+}
+
+window.SiteUtils = Object.freeze({
+  createMediaQueryList,
+  sanitizeImageUrl,
+  sanitizeCoverBackground,
+});
+
 const cursorGlow = document.getElementById("cursorGlow");
 const finePointerQuery = createMediaQueryList("(hover: hover) and (pointer: fine)");
 const reducedMotionQuery = createMediaQueryList("(prefers-reduced-motion: reduce)");
@@ -417,6 +444,13 @@ function ensureLinkTag(selector, attributes) {
   return link;
 }
 
+const DEFAULT_OG_IMAGE_URL = new URL("favicon.png?v=2", window.location.origin).href;
+const DEFAULT_OG_IMAGE_ALT = "Share Everything";
+
+function sanitizeMetaImageUrl(candidate) {
+  return sanitizeImageUrl(candidate) || DEFAULT_OG_IMAGE_URL;
+}
+
 function updateSeoMeta({
   title,
   description,
@@ -424,11 +458,14 @@ function updateSeoMeta({
   canonicalUrl = url,
   ogTitle = title,
   ogDescription = description,
+  ogImage = DEFAULT_OG_IMAGE_URL,
+  ogImageAlt = DEFAULT_OG_IMAGE_ALT,
 } = {}) {
   const resolvedUrl = new URL(url, window.location.href);
   resolvedUrl.hash = "";
   const resolvedCanonicalUrl = new URL(canonicalUrl, window.location.href);
   resolvedCanonicalUrl.hash = "";
+  const resolvedOgImage = sanitizeMetaImageUrl(ogImage);
 
   if (typeof title === "string" && title) {
     document.title = title;
@@ -455,6 +492,12 @@ function updateSeoMeta({
   ensureMetaTag('meta[property="og:url"]', {
     property: "og:url",
   }).content = resolvedUrl.href;
+  ensureMetaTag('meta[property="og:image"]', {
+    property: "og:image",
+  }).content = resolvedOgImage;
+  ensureMetaTag('meta[property="og:image:alt"]', {
+    property: "og:image:alt",
+  }).content = typeof ogImageAlt === "string" && ogImageAlt ? ogImageAlt : DEFAULT_OG_IMAGE_ALT;
 
   ensureLinkTag('link[rel="canonical"]', {
     rel: "canonical",
@@ -469,8 +512,203 @@ updateSeoMeta({
   ogDescription:
     document.querySelector('meta[property="og:description"]')?.content ||
     document.querySelector('meta[name="description"]')?.content,
+  ogImage: document.querySelector('meta[property="og:image"]')?.content || DEFAULT_OG_IMAGE_URL,
+  ogImageAlt:
+    document.querySelector('meta[property="og:image:alt"]')?.content || DEFAULT_OG_IMAGE_ALT,
   url: window.location.href,
 });
+
+function ensureStructuredDataTag(key) {
+  const selector = `script[type="application/ld+json"][data-structured-data="${key}"]`;
+  let script = document.head?.querySelector(selector);
+  if (!script) {
+    script = document.createElement("script");
+    script.type = "application/ld+json";
+    script.setAttribute("data-structured-data", key);
+    document.head?.appendChild(script);
+  }
+  return script;
+}
+
+function setStructuredData(key, payload) {
+  if (!key) return;
+  if (!payload || typeof payload !== "object") {
+    clearStructuredData(key);
+    return;
+  }
+
+  ensureStructuredDataTag(key).textContent = JSON.stringify(payload);
+}
+
+function clearStructuredData(key) {
+  if (!key) return;
+  document.head
+    ?.querySelector(`script[type="application/ld+json"][data-structured-data="${key}"]`)
+    ?.remove();
+}
+
+window.StructuredData = Object.freeze({
+  set: setStructuredData,
+  clear: clearStructuredData,
+});
+
+const PageProgress = (() => {
+  let root = null;
+  let bar = null;
+  let trickleTimer = null;
+  let hideTimer = null;
+  let currentValue = 0;
+
+  function ensureElements() {
+    if (root && bar) {
+      return { root, bar };
+    }
+
+    root = document.getElementById("pageProgress");
+    if (!(root instanceof HTMLElement)) {
+      root = document.createElement("div");
+      root.id = "pageProgress";
+      root.className = "page-progress";
+      root.setAttribute("aria-hidden", "true");
+
+      bar = document.createElement("span");
+      bar.className = "page-progress-bar";
+      root.appendChild(bar);
+      document.body?.appendChild(root);
+    } else {
+      bar = root.querySelector(".page-progress-bar");
+      if (!(bar instanceof HTMLElement)) {
+        bar = document.createElement("span");
+        bar.className = "page-progress-bar";
+        root.appendChild(bar);
+      }
+    }
+
+    return { root, bar };
+  }
+
+  function setProgress(value) {
+    const nextValue = Math.max(0, Math.min(1, value));
+    currentValue = nextValue;
+    ensureElements().bar.style.transform = `scaleX(${nextValue})`;
+  }
+
+  function stopTrickle() {
+    if (trickleTimer != null) {
+      clearInterval(trickleTimer);
+      trickleTimer = null;
+    }
+  }
+
+  function start() {
+    const elements = ensureElements();
+    if (hideTimer != null) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+
+    stopTrickle();
+    elements.root.classList.remove("is-complete");
+    elements.root.classList.add("is-visible");
+    setProgress(0.08);
+
+    trickleTimer = window.setInterval(() => {
+      const delta = currentValue < 0.35
+        ? 0.14
+        : currentValue < 0.65
+          ? 0.08
+          : 0.03;
+      setProgress(Math.min(0.9, currentValue + delta));
+    }, 160);
+  }
+
+  function finish() {
+    const elements = ensureElements();
+    stopTrickle();
+    elements.root.classList.add("is-visible");
+    setProgress(Math.max(currentValue, 0.96));
+
+    window.requestAnimationFrame(() => {
+      setProgress(1);
+      elements.root.classList.add("is-complete");
+    });
+
+    hideTimer = window.setTimeout(() => {
+      elements.root.classList.remove("is-visible", "is-complete");
+      setProgress(0);
+      hideTimer = null;
+    }, 260);
+  }
+
+  return { start, finish };
+})();
+
+function findPageFocusTarget(root, preferredSelectors = []) {
+  if (!(root instanceof HTMLElement)) return null;
+
+  const selectors = [
+    ...preferredSelectors,
+    "[data-page-focus]",
+    ".page-title",
+    ".post-title",
+    ".hero-title",
+    "h1",
+  ];
+
+  for (const selector of selectors) {
+    const target = root.querySelector(selector);
+    if (target instanceof HTMLElement) {
+      return target;
+    }
+  }
+
+  return root;
+}
+
+function makeTemporarilyFocusable(target) {
+  if (!(target instanceof HTMLElement)) return null;
+
+  const isNaturallyFocusable =
+    target.tabIndex >= 0 ||
+    target instanceof HTMLAnchorElement ||
+    target instanceof HTMLButtonElement ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLSelectElement ||
+    target instanceof HTMLTextAreaElement ||
+    target.isContentEditable;
+
+  if (!isNaturallyFocusable && !target.hasAttribute("tabindex")) {
+    target.setAttribute("tabindex", "-1");
+    target.dataset.spaManagedFocus = "true";
+  }
+
+  return target;
+}
+
+function focusSpaContent({ root, preferredSelectors = [], clearPendingFocus = true } = {}) {
+  if (!(root instanceof HTMLElement)) return null;
+
+  const target = makeTemporarilyFocusable(findPageFocusTarget(root, preferredSelectors));
+  if (!target) return null;
+
+  target.focus({ preventScroll: true });
+  if (clearPendingFocus) {
+    delete root.dataset.pendingFocus;
+  }
+  return target;
+}
+
+window.focusSpaContent = focusSpaContent;
+
+function getBlogCardLink(target) {
+  if (!(target instanceof Element)) return null;
+
+  const card = target.closest(".blog-card");
+  if (!card) return null;
+
+  const cardLink = card.querySelector(".blog-card-link");
+  return cardLink instanceof HTMLAnchorElement && cardLink.href ? cardLink : null;
+}
 
 /* ===== 清除文字选区（防止蓝框残留）===== */
 document.addEventListener("mousedown", (e) => {
@@ -559,6 +797,7 @@ const SPARouter = (() => {
   let activeNavigationController = null;
   const loadedScripts = new Set();
   const MAX_PAGE_CACHE_ENTRIES = 6;
+  const PAGE_CACHE_TTL_MS = 1000 * 60 * 5;
   const pageCache = new Map();
   const prefetched = new Set();
 
@@ -591,7 +830,10 @@ const SPARouter = (() => {
     if (pageCache.has(cacheKey)) {
       pageCache.delete(cacheKey);
     }
-    pageCache.set(cacheKey, html);
+    pageCache.set(cacheKey, {
+      html,
+      cachedAt: Date.now(),
+    });
 
     while (pageCache.size > MAX_PAGE_CACHE_ENTRIES) {
       const oldestCacheKey = pageCache.keys().next().value;
@@ -599,6 +841,24 @@ const SPARouter = (() => {
       pageCache.delete(oldestCacheKey);
       prefetched.delete(oldestCacheKey);
     }
+  }
+
+  function readPageHtmlFromCache(cacheKey) {
+    const entry = pageCache.get(cacheKey);
+    if (!entry) return null;
+
+    if (
+      typeof entry.html !== "string" ||
+      !Number.isFinite(entry.cachedAt) ||
+      Date.now() - entry.cachedAt >= PAGE_CACHE_TTL_MS
+    ) {
+      pageCache.delete(cacheKey);
+      prefetched.delete(cacheKey);
+      return null;
+    }
+
+    rememberPageHtml(cacheKey, entry.html);
+    return entry.html;
   }
 
   function rememberPrefetchedPage(cacheKey) {
@@ -640,9 +900,8 @@ const SPARouter = (() => {
   async function fetchPageHtml(url, { signal } = {}) {
     const routeKey = getRouteKey(url);
     const cacheKey = getPageCacheKey(routeKey);
-    const cachedHtml = pageCache.get(cacheKey);
+    const cachedHtml = readPageHtmlFromCache(cacheKey);
     if (cachedHtml) {
-      rememberPageHtml(cacheKey, cachedHtml);
       return cachedHtml;
     }
 
@@ -660,7 +919,7 @@ const SPARouter = (() => {
   function warmPage(url) {
     if (!canWarmResources()) return;
     const cacheKey = getPageCacheKey(url);
-    if (prefetched.has(cacheKey) || pageCache.has(cacheKey)) return;
+    if (prefetched.has(cacheKey) || readPageHtmlFromCache(cacheKey)) return;
 
     rememberPrefetchedPage(cacheKey);
     fetchPageHtml(url).catch(() => {
@@ -691,6 +950,8 @@ const SPARouter = (() => {
     const currentRouteKey = getRouteKey(window.location.href);
     const targetRouteKey = getRouteKey(targetUrl.href);
     if (pushState && targetRouteKey === currentRouteKey) return;
+
+    PageProgress.start();
 
     const targetPageId = PageRuntime.getPageIdFromUrl(targetRouteKey);
     const currentToken = ++navigationToken;
@@ -745,16 +1006,24 @@ const SPARouter = (() => {
       const nextOgTitle = doc.querySelector('meta[property="og:title"]')?.content || nextTitle;
       const nextOgDescription =
         doc.querySelector('meta[property="og:description"]')?.content || nextDescription;
+      const nextOgImage =
+        doc.querySelector('meta[property="og:image"]')?.content || DEFAULT_OG_IMAGE_URL;
+      const nextOgImageAlt =
+        doc.querySelector('meta[property="og:image:alt"]')?.content || nextTitle || DEFAULT_OG_IMAGE_ALT;
       updateSeoMeta({
         title: nextTitle,
         description: nextDescription,
         url: targetUrl.href,
         ogTitle: nextOgTitle,
         ogDescription: nextOgDescription,
+        ogImage: nextOgImage,
+        ogImageAlt: nextOgImageAlt,
       });
 
       // ⑤ 替换内容
       content.innerHTML = newContent.innerHTML;
+      content.dataset.pendingFocus = targetPageId || "page";
+      clearStructuredData("post-article");
 
       // 禁用内部的入场动画（避免与 SPA 过渡重叠）
       content.querySelectorAll(".page-transition-wrapper").forEach(el => el.style.animation = "none");
@@ -768,6 +1037,13 @@ const SPARouter = (() => {
 
       // ⑦ 滚动到顶部
       window.scrollTo({ top: 0, behavior: "auto" });
+      window.requestAnimationFrame(() => {
+        if (currentToken !== navigationToken) return;
+        focusSpaContent({
+          root: content,
+          clearPendingFocus: targetPageId !== "post",
+        });
+      });
 
       // ⑧ 淡入
       content.style.transform = "translateY(12px)";
@@ -792,6 +1068,7 @@ const SPARouter = (() => {
     } finally {
       if (currentToken === navigationToken) {
         activeNavigationController = null;
+        PageProgress.finish();
       }
     }
   }
@@ -832,7 +1109,7 @@ const SPARouter = (() => {
       warmPage(link.href);
     }
     // Notion 数据预加载
-    const hoveredCard = target.closest("a.blog-card");
+    const hoveredCard = getBlogCardLink(target);
     if (hoveredCard && hoveredCard.href) {
       warmPostDetail(hoveredCard);
     }
@@ -846,7 +1123,7 @@ const SPARouter = (() => {
     const target = e.target;
     if (!(target instanceof Element)) return;
 
-    const pressedCard = target.closest("a.blog-card");
+    const pressedCard = getBlogCardLink(target);
     if (pressedCard && pressedCard.href) {
       warmPostDetail(pressedCard);
     }
@@ -861,6 +1138,11 @@ const SPARouter = (() => {
     const link = target.closest("a");
     if (link && link.href && link.href.startsWith(window.location.origin)) {
       warmPage(link.href);
+    }
+
+    const focusedCard = getBlogCardLink(target);
+    if (focusedCard && focusedCard.href) {
+      warmPostDetail(focusedCard);
     }
   });
 

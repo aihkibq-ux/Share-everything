@@ -1,20 +1,7 @@
 (() => {
-  function createMediaQueryList(query) {
-    if (typeof window.matchMedia === "function") {
-      return window.matchMedia(query);
-    }
-
-    return {
-      matches: false,
-      addEventListener: null,
-      removeEventListener: null,
-      addListener: () => {},
-      removeListener: () => {},
-    };
-  }
-
   function initPostPage() {
     const notionApi = window.NotionAPI;
+    const siteUtils = window.SiteUtils || {};
     const bookmarkManager = window.BookmarkManager || null;
 
     const params = new URLSearchParams(window.location.search);
@@ -38,7 +25,10 @@
     }
 
     const bookmarkElements = [fab, navBookmark].filter(Boolean);
-    const mobileNavQuery = createMediaQueryList("(max-width: 768px)");
+    const mobileNavQuery =
+      typeof siteUtils.createMediaQueryList === "function"
+        ? siteUtils.createMediaQueryList("(max-width: 768px)")
+        : window.matchMedia("(max-width: 768px)");
     let isDisposed = false;
     let bookmarkBindings = [];
     let backClickHandler = null;
@@ -148,6 +138,7 @@
       articleEl.querySelector(".post-back")?.style.setProperty("display", "none");
       setBookmarkControlsVisible(false);
       emptyEl.style.display = "flex";
+      window.StructuredData?.clear?.("post-article");
     }
 
     function saveReadingHistory(post) {
@@ -231,6 +222,8 @@
             title,
             description,
             url: window.location.href,
+            ogImage: post.coverImage || undefined,
+            ogImageAlt: post.title,
           });
         } else {
           document.title = title;
@@ -249,7 +242,7 @@
             <div class="post-category" style="background: ${catColor.bg}; color: ${catColor.color}; border: 1px solid ${catColor.border};">
               ${esc(post.category)}
             </div>
-            <h1 class="post-title">${esc(post.title)}</h1>
+            <h1 class="post-title" data-page-focus>${esc(post.title)}</h1>
             <div class="post-meta">
               <span>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -278,6 +271,44 @@
         skeletonEl.style.display = "none";
         contentEl.style.display = "block";
         contentEl.style.animation = "fadeInUp 0.6s ease both";
+        const canonicalUrl = new URL(window.location.href);
+        canonicalUrl.hash = "";
+        window.StructuredData?.set?.("post-article", {
+          "@context": "https://schema.org",
+          "@type": "Article",
+          headline: post.title,
+          description,
+          articleSection: post.category || undefined,
+          keywords: Array.isArray(post.tags) ? post.tags.join(", ") : undefined,
+          datePublished: post.date || undefined,
+          dateModified: post.date || undefined,
+          image: post.coverImage ? [post.coverImage] : [new URL("favicon.png?v=2", window.location.origin).href],
+          mainEntityOfPage: canonicalUrl.href,
+          url: canonicalUrl.href,
+          author: {
+            "@type": "Organization",
+            name: "Share Everything",
+          },
+          publisher: {
+            "@type": "Organization",
+            name: "Share Everything",
+            logo: {
+              "@type": "ImageObject",
+              url: new URL("favicon.png?v=2", window.location.origin).href,
+            },
+          },
+        });
+        const spaContent = document.getElementById("spa-content");
+        if (spaContent?.dataset.pendingFocus) {
+          window.requestAnimationFrame(() => {
+            if (!isDisposed) {
+              window.focusSpaContent?.({
+                root: spaContent,
+                preferredSelectors: [".post-title"],
+              });
+            }
+          });
+        }
 
         scheduleReadingHistorySave(post);
         initBookmark(post);
@@ -298,6 +329,7 @@
       cleanupBackHandler();
       mediaQueryCleanup?.();
       clearReadingHistoryTask();
+      window.StructuredData?.clear?.("post-article");
     };
   }
 

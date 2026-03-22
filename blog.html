@@ -9,6 +9,8 @@
     <meta property="og:description" content="探索所有文章，按分类浏览，搜索你感兴趣的内容。" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://www.0000068.xyz/blog.html" />
+    <meta property="og:image" content="https://www.0000068.xyz/favicon.png?v=2" />
+    <meta property="og:image:alt" content="Share Everything" />
     <link rel="canonical" href="https://www.0000068.xyz/blog.html" />
     <link rel="preconnect" href="https://fonts.googleapis.cn" />
     <link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin />
@@ -69,12 +71,12 @@
       <!-- Content -->
       <div class="page-container">
         <div class="page-header">
-          <h1 class="page-title">总览</h1>
+          <h1 class="page-title" data-page-focus>总览</h1>
         </div>
 
       <!-- Search -->
       <div class="blog-search">
-        <input type="text" id="blogSearch" placeholder="搜索文章标题、摘要或标签..." aria-label="搜索文章" />
+        <input type="text" id="blogSearch" placeholder="搜索文章标题、摘要或标签..." aria-label="搜索文章" aria-controls="blogGrid" />
         <svg
           class="search-icon"
           aria-hidden="true"
@@ -95,8 +97,10 @@
       <!-- Category Filters -->
       <div class="blog-filters" id="blogFilters"></div>
 
+      <div class="visually-hidden" id="blogStatus" role="status" aria-live="polite" aria-atomic="true"></div>
+
       <!-- Blog Grid -->
-      <div class="blog-grid" id="blogGrid"></div>
+      <div class="blog-grid" id="blogGrid" role="list" aria-busy="false"></div>
 
       <!-- Empty State -->
       <div class="empty-state" id="emptyState" style="display: none;">

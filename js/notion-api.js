@@ -11,6 +11,7 @@ const NotionAPI = (() => {
   };
   const REQUEST_TIMEOUT = 12000;
   const POST_SUMMARY_CACHE_PREFIX = "notion_post_summary_";
+  const CACHE_KEY_PREFIXES = ["notion_query_", "notion_page_", POST_SUMMARY_CACHE_PREFIX];
   const SAFE_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
   const SAFE_IMAGE_PROTOCOLS = new Set(["http:", "https:"]);
   const NOTION_ANNOTATION_STYLES = {
@@ -51,18 +52,80 @@ const NotionAPI = (() => {
   const postSummaryMemoryCache = new Map();
   const postSummaryTimestampCache = new Map();
 
+  function isManagedCacheKey(key) {
+    return typeof key === "string" && CACHE_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
+  }
+
+  function removeCacheEntry(key) {
+    try {
+      sessionStorage.removeItem(key);
+    } catch (error) {}
+  }
+
+  function collectManagedCacheEntries(excludeKey) {
+    const entries = [];
+
+    try {
+      for (let index = 0; index < sessionStorage.length; index += 1) {
+        const key = sessionStorage.key(index);
+        if (!key || key === excludeKey || !isManagedCacheKey(key)) continue;
+
+        const raw = sessionStorage.getItem(key);
+        if (!raw) {
+          entries.push({ key, timestamp: 0 });
+          continue;
+        }
+
+        try {
+          const parsed = JSON.parse(raw);
+          entries.push({
+            key,
+            timestamp: Number.isFinite(Number(parsed?.timestamp)) ? Number(parsed.timestamp) : 0,
+          });
+        } catch (error) {
+          removeCacheEntry(key);
+        }
+      }
+    } catch (error) {
+      return [];
+    }
+
+    return entries.sort((left, right) => left.timestamp - right.timestamp);
+  }
+
+  function trySetCacheItem(key, payload) {
+    try {
+      sessionStorage.setItem(key, payload);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
   function getCache(key) {
     try {
       const raw = sessionStorage.getItem(key);
       if (!raw) return null;
       return JSON.parse(raw);
-    } catch (e) { return null; }
+    } catch (e) {
+      if (isManagedCacheKey(key)) {
+        removeCacheEntry(key);
+      }
+      return null;
+    }
   }
 
   function setCache(key, data, timestamp = Date.now()) {
-    try {
-      sessionStorage.setItem(key, JSON.stringify({ timestamp, data }));
-    } catch (e) {}
+    const payload = JSON.stringify({ timestamp, data });
+    if (trySetCacheItem(key, payload)) return;
+
+    const existingEntries = collectManagedCacheEntries(key);
+    for (const entry of existingEntries) {
+      removeCacheEntry(entry.key);
+      if (trySetCacheItem(key, payload)) {
+        return;
+      }
+    }
   }
 
   function getPostSummaryCacheKey(pageId) {

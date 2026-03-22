@@ -5,6 +5,9 @@
 
 const BookmarkManager = (() => {
   const BOOKMARK_KEY = "bookmarked_posts";
+  const siteUtils = window.SiteUtils || {};
+  const sanitizeImageUrl = siteUtils.sanitizeImageUrl;
+  const sanitizeCoverBackground = siteUtils.sanitizeCoverBackground;
   let bookmarksCache = null;
 
   function escapeSelectorValue(value) {
@@ -38,30 +41,6 @@ const BookmarkManager = (() => {
     try {
       localStorage.setItem(BOOKMARK_KEY, JSON.stringify(bookmarksCache));
     } catch (e) {}
-  }
-
-  function sanitizeImageUrl(candidate) {
-    if (!candidate || typeof candidate !== "string") return null;
-
-    try {
-      const parsed = new URL(candidate, window.location.origin);
-      return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : null;
-    } catch (error) {
-      return null;
-    }
-  }
-
-  function sanitizeCoverBackground(value) {
-    if (typeof value !== "string") return null;
-
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    if (trimmed.includes(";") || /url\s*\(/i.test(trimmed)) return null;
-    if (!/^(linear-gradient|radial-gradient)\([#(),.%\sa-zA-Z0-9+-]+\)$/.test(trimmed)) {
-      return null;
-    }
-
-    return trimmed;
   }
 
   function normalizeText(value, fallback = "") {
@@ -100,9 +79,12 @@ const BookmarkManager = (() => {
       excerpt,
       date: normalizeText(entry.date),
       readTime: normalizeText(entry.readTime),
-      coverImage: sanitizeImageUrl(entry.coverImage),
+      coverImage: typeof sanitizeImageUrl === "function" ? sanitizeImageUrl(entry.coverImage) : null,
       coverEmoji: normalizeText(entry.coverEmoji, "📝"),
-      coverGradient: sanitizeCoverBackground(entry.coverGradient),
+      coverGradient:
+        typeof sanitizeCoverBackground === "function"
+          ? sanitizeCoverBackground(entry.coverGradient)
+          : null,
       tags,
       _searchText: buildBookmarkSearchText({ title, excerpt, tags }),
       timestamp: Number.isFinite(Number(entry.timestamp)) ? Number(entry.timestamp) : Date.now(),
@@ -111,6 +93,16 @@ const BookmarkManager = (() => {
 
   function isBookmarked(id) {
     return readBookmarks().some(b => b.id === id);
+  }
+
+  function parseSerializedTags(value) {
+    if (typeof value !== "string" || !value.trim()) return [];
+
+    try {
+      return normalizeTags(JSON.parse(value));
+    } catch (error) {
+      return [];
+    }
   }
 
   /**
@@ -176,6 +168,7 @@ const BookmarkManager = (() => {
           const title = card.querySelector('.blog-card-title')?.textContent || '';
           const excerpt = card.querySelector('.blog-card-excerpt')?.textContent || '';
           const category = card.querySelector('.blog-card-category')?.textContent || '';
+          const tags = parseSerializedTags(card.dataset.postTags);
           const metaSpans = card.querySelectorAll('.blog-card-meta > span');
           const date = metaSpans[0]?.textContent?.trim() || '';
           const readTime = metaSpans[1]?.textContent?.trim() || '';
@@ -191,7 +184,7 @@ const BookmarkManager = (() => {
             coverImage: img?.src || null,
             coverEmoji: emoji?.textContent || '📝',
             coverGradient: null,
-            tags: [],
+            tags,
             timestamp: Date.now(),
           });
           if (normalizedBookmark) {

@@ -1,6 +1,7 @@
 (() => {
   function initBlogPage() {
     const notionApi = window.NotionAPI;
+    const siteUtils = window.SiteUtils || {};
     const bookmarkManager = window.BookmarkManager || {
       getAll: () => [],
       isBookmarked: () => false,
@@ -12,6 +13,7 @@
     const gridEl = document.getElementById("blogGrid");
     const emptyEl = document.getElementById("emptyState");
     const paginationEl = document.getElementById("pagination");
+    const statusEl = document.getElementById("blogStatus");
     const escapeText = notionApi?.escapeHtml || ((value) => String(value ?? ""));
 
     if (!filtersEl || !searchInput || !gridEl || !emptyEl || !paginationEl) {
@@ -34,6 +36,7 @@
     let historySaveHandle = null;
     let revealFrame = null;
     let cleanupCardReveal = null;
+    let statusAnnouncementHandle = null;
 
     const params = new URLSearchParams(window.location.search);
     if (params.get("category")) currentCategory = params.get("category");
@@ -44,6 +47,7 @@
     const pageSize = notionApi.getPageSize?.() || 9;
     const validCategories = new Set([...categories.map((cat) => cat.name), "收藏"]);
     if (!validCategories.has(currentCategory)) currentCategory = "全部";
+    searchInput.setAttribute("aria-controls", "blogGrid");
 
     function clearDetailWarmup() {
       if (detailWarmupHandle == null) return;
@@ -81,6 +85,45 @@
       cleanupCardReveal = null;
     }
 
+    function clearStatusAnnouncement() {
+      if (statusAnnouncementHandle == null) return;
+      clearTimeout(statusAnnouncementHandle);
+      statusAnnouncementHandle = null;
+    }
+
+    function announceStatus(message) {
+      if (!statusEl || typeof message !== "string" || !message.trim()) return;
+
+      clearStatusAnnouncement();
+      statusEl.textContent = "";
+      statusAnnouncementHandle = window.setTimeout(() => {
+        statusEl.textContent = message;
+        statusAnnouncementHandle = null;
+      }, 30);
+    }
+
+    function setGridBusy(isBusy) {
+      gridEl.setAttribute("aria-busy", isBusy ? "true" : "false");
+    }
+
+    function buildResultsAnnouncement(data) {
+      const total = Number(data?.total) || 0;
+      const currentPageValue = Number(data?.currentPage) || 1;
+      const totalPagesValue = Number(data?.totalPages) || 1;
+
+      if (total === 0) {
+        return currentSearch
+          ? `没有找到与“${currentSearch}”匹配的文章。`
+          : "当前没有可显示的文章。";
+      }
+
+      if (currentSearch) {
+        return `搜索结果已更新，共 ${total} 篇文章，当前第 ${currentPageValue} 页，共 ${totalPagesValue} 页。`;
+      }
+
+      return `文章列表已更新，共 ${total} 篇文章，当前第 ${currentPageValue} 页，共 ${totalPagesValue} 页。`;
+    }
+
     function renderEmptyStateMarkup({
       title = "没有找到匹配的文章",
       hint = "试试其他关键词或分类",
@@ -104,10 +147,12 @@
     function showEmptyState(options = {}) {
       clearCardReveal();
       clearDetailWarmup();
+      setGridBusy(false);
       gridEl.innerHTML = "";
       emptyEl.innerHTML = renderEmptyStateMarkup(options);
       emptyEl.style.display = "flex";
       paginationEl.innerHTML = "";
+      announceStatus(options.announcement || options.title || "没有找到匹配的文章。");
     }
 
     function canWarmArticleDetails() {
@@ -245,8 +290,18 @@
       const safeExcerpt = esc(post.excerpt);
       const safeCategory = esc(post.category);
       const safeCoverEmoji = esc(post.coverEmoji || "📝");
-      const safeCoverGradient = sanitizeCoverBackground(post.coverGradient, defaultCoverGradient);
-      const safeCoverImage = sanitizeImageUrl(post.coverImage);
+      const safeCoverGradient =
+        typeof siteUtils.sanitizeCoverBackground === "function"
+          ? siteUtils.sanitizeCoverBackground(post.coverGradient, defaultCoverGradient)
+          : defaultCoverGradient;
+      const safeCoverImage =
+        typeof siteUtils.sanitizeImageUrl === "function"
+          ? siteUtils.sanitizeImageUrl(post.coverImage)
+          : null;
+      const safePostUrl = `post.html?id=${encodeURIComponent(post.id)}`;
+      const serializedTags = esc(JSON.stringify(Array.isArray(post.tags) ? post.tags : []));
+      const bookmarkTitle = bookmarked ? "取消收藏" : "收藏";
+      const bookmarkAriaLabel = `${bookmarkTitle}文章：${post.title || "Untitled"}`;
       const coverHtml = safeCoverImage
         ? `<div class="blog-card-cover-placeholder blog-card-cover-img">
              <img src="${esc(safeCoverImage)}" alt="${safeTitle}" loading="lazy" decoding="async">
@@ -256,7 +311,8 @@
            </div>`;
 
       return `
-        <a href="post.html?id=${encodeURIComponent(post.id)}" class="blog-card" data-reveal data-post-id="${esc(post.id)}">
+        <article class="blog-card" data-reveal data-post-id="${esc(post.id)}" data-post-tags="${serializedTags}" role="listitem">
+          <a href="${safePostUrl}" class="blog-card-link" aria-label="阅读文章：${safeTitle}"></a>
           ${coverHtml}
           <div class="blog-card-body">
             <div class="blog-card-category" style="background: ${catColor.bg}; color: ${catColor.color}; border-color: ${catColor.border}">${safeCategory}</div>
@@ -279,36 +335,15 @@
                 </svg>
                 ${esc(post.readTime)}
               </span>
-              <button class="card-bookmark-btn${bookmarked ? " bookmarked" : ""}" data-bookmark-id="${esc(post.id)}" title="${bookmarked ? "取消收藏" : "收藏"}">
+              <button type="button" class="card-bookmark-btn${bookmarked ? " bookmarked" : ""}" data-bookmark-id="${esc(post.id)}" data-bookmark-title="${safeTitle}" title="${bookmarkTitle}" aria-label="${esc(bookmarkAriaLabel)}" aria-pressed="${bookmarked ? "true" : "false"}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
                 </svg>
               </button>
             </div>
           </div>
-        </a>
+        </article>
       `;
-    }
-
-    function sanitizeImageUrl(candidate) {
-      if (!candidate || typeof candidate !== "string") return null;
-
-      try {
-        const parsed = new URL(candidate, window.location.origin);
-        return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : null;
-      } catch (error) {
-        return null;
-      }
-    }
-
-    function sanitizeCoverBackground(value, fallback) {
-      if (typeof value !== "string") return fallback;
-
-      const trimmed = value.trim();
-      const isGradient = /^(linear-gradient|radial-gradient)\([#(),.%\sa-zA-Z0-9+-]+\)$/.test(trimmed);
-      if (!trimmed || !isGradient) return fallback;
-      if (trimmed.includes(";") || /url\s*\(/i.test(trimmed)) return fallback;
-      return trimmed;
     }
 
     function renderPagination(data) {
@@ -327,6 +362,8 @@
     async function renderPosts() {
       const currentToken = ++renderToken;
       clearCardReveal();
+      setGridBusy(true);
+      announceStatus(currentSearch ? "正在更新搜索结果。" : "正在加载文章列表。");
 
       try {
         let data;
@@ -379,6 +416,8 @@
         gridEl.innerHTML = data.results.map(renderCard).join("");
         renderPagination(data);
         scheduleDetailWarmup(data.results);
+        setGridBusy(false);
+        announceStatus(buildResultsAnnouncement(data));
 
         revealFrame = window.requestAnimationFrame(() => {
           revealFrame = null;
@@ -394,6 +433,7 @@
           title: "加载失败",
           hint: "请检查网络后重试",
           actionLabel: "重试",
+          announcement: "文章加载失败，请重试。",
         });
       }
     }
@@ -440,12 +480,17 @@
 
       const postId = button.dataset.bookmarkId;
       const nowBookmarked = bookmarkManager.toggleById(postId);
+      const postTitle = button.dataset.bookmarkTitle || "Untitled";
+      const bookmarkAriaLabel = `${nowBookmarked ? "取消收藏" : "收藏"}文章：${postTitle}`;
 
       button.classList.toggle("bookmarked", nowBookmarked);
       button.title = nowBookmarked ? "取消收藏" : "收藏";
+      button.setAttribute("aria-pressed", nowBookmarked ? "true" : "false");
+      button.setAttribute("aria-label", bookmarkAriaLabel);
       button.classList.remove("bounce");
       void button.offsetWidth;
       button.classList.add("bounce");
+      announceStatus(nowBookmarked ? `已收藏文章：${postTitle}。` : `已取消收藏文章：${postTitle}。`);
 
       if (!nowBookmarked && currentCategory === "收藏") {
         setTimeout(() => renderPosts(), 300);
@@ -492,6 +537,9 @@
       gridEl.removeEventListener("click", handleGridClick);
       gridEl.removeEventListener("error", handleGridMediaError, true);
       emptyEl.removeEventListener("click", handleEmptyStateClick);
+      clearStatusAnnouncement();
+      setGridBusy(false);
+      if (statusEl) statusEl.textContent = "";
       clearCardReveal();
       clearDetailWarmup();
       clearHistorySave();
