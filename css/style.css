@@ -174,7 +174,13 @@ body {
   );
   pointer-events: none;
   z-index: 2;
+  opacity: 0;
+  transition: opacity 0.2s ease;
   will-change: transform;
+}
+
+body.has-cursor-glow .cursor-glow {
+  opacity: 1;
 }
 
 /* ===== Content Layer ===== */
@@ -1343,12 +1349,14 @@ body {
     padding: 9px 8px;
     border-radius: 999px;
     font-size: 0.71rem;
-    background: rgba(16, 20, 42, 0.52);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    background: linear-gradient(
+      135deg,
+      rgba(27, 33, 63, 0.82),
+      rgba(15, 20, 40, 0.74)
+    );
+    border: 1px solid rgba(255, 255, 255, 0.09);
     box-shadow:
-      0 10px 24px rgba(0, 0, 0, 0.18),
+      0 10px 24px rgba(0, 0, 0, 0.2),
       inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
 
@@ -1916,5 +1924,11 @@ body {
   .fab-bookmark {
     bottom: calc(16px + env(safe-area-inset-bottom));
     right: 16px;
+  }
+}
+
+@media (hover: none), (pointer: coarse), (prefers-reduced-motion: reduce) {
+  .cursor-glow {
+    display: none;
   }
 }

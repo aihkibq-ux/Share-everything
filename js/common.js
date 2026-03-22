@@ -272,28 +272,91 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ===== Cursor Glow, Spotlight & Parallax (merged mousemove) ===== */
-const cursorGlow = document.getElementById("cursorGlow");
-let mouseAF = null;
+function createMediaQueryList(query) {
+  if (typeof window.matchMedia === "function") {
+    return window.matchMedia(query);
+  }
 
-document.addEventListener("mousemove", (e) => {
-  const clientX = e.clientX;
-  const clientY = e.clientY;
+  return {
+    matches: false,
+    addEventListener: null,
+    removeEventListener: null,
+    addListener: () => {},
+    removeListener: () => {},
+  };
+}
+
+const cursorGlow = document.getElementById("cursorGlow");
+const finePointerQuery = createMediaQueryList("(hover: hover) and (pointer: fine)");
+const reducedMotionQuery = createMediaQueryList("(prefers-reduced-motion: reduce)");
+const connectionInfo =
+  navigator.connection ||
+  navigator.mozConnection ||
+  navigator.webkitConnection ||
+  null;
+let mouseAF = null;
+let cursorTrackingEnabled = false;
+let latestPointerX = 0;
+let latestPointerY = 0;
+
+function canUseCursorGlow() {
+  return Boolean(cursorGlow) && finePointerQuery.matches && !reducedMotionQuery.matches;
+}
+
+function bindMediaQueryChange(mediaQueryList, handler) {
+  if (typeof mediaQueryList.addEventListener === "function") {
+    mediaQueryList.addEventListener("change", handler);
+    return;
+  }
+
+  mediaQueryList.addListener(handler);
+}
+
+function handleMouseMove(e) {
+  latestPointerX = e.clientX;
+  latestPointerY = e.clientY;
 
   // Particles Parallax Offset
   if (width && height) {
-    targetMouseX = (clientX - width / 2) * 2;
-    targetMouseY = (clientY - height / 2) * 2;
+    targetMouseX = (latestPointerX - width / 2) * 2;
+    targetMouseY = (latestPointerY - height / 2) * 2;
   }
 
   if (mouseAF) return; // Debounce RAF
   mouseAF = requestAnimationFrame(() => {
     // Global Cursor Glow
-    if (cursorGlow) {
-      cursorGlow.style.transform = `translate(${clientX - 200}px, ${clientY - 200}px)`;
+    if (cursorGlow && cursorTrackingEnabled) {
+      cursorGlow.style.transform = `translate(${latestPointerX - 200}px, ${latestPointerY - 200}px)`;
     }
     mouseAF = null;
   });
-});
+}
+
+function syncCursorGlowState() {
+  const enabled = canUseCursorGlow();
+  document.body?.classList.toggle("has-cursor-glow", enabled);
+
+  if (enabled === cursorTrackingEnabled) return;
+  cursorTrackingEnabled = enabled;
+
+  if (enabled) {
+    document.addEventListener("mousemove", handleMouseMove, { passive: true });
+    return;
+  }
+
+  document.removeEventListener("mousemove", handleMouseMove);
+  if (mouseAF) {
+    cancelAnimationFrame(mouseAF);
+    mouseAF = null;
+  }
+  if (cursorGlow) {
+    cursorGlow.style.transform = "";
+  }
+}
+
+bindMediaQueryChange(finePointerQuery, syncCursorGlowState);
+bindMediaQueryChange(reducedMotionQuery, syncCursorGlowState);
+syncCursorGlowState();
 
 /* ===== Blog Card Reveal (reuse for blog pages) ===== */
 function initBlogCardReveal() {
@@ -411,6 +474,10 @@ const SPARouter = (() => {
   const pageCache = new Map();
   const prefetched = new Set();
 
+  function canWarmResources() {
+    return !(connectionInfo?.saveData || /(^|-)2g$/.test(connectionInfo?.effectiveType || ""));
+  }
+
   function resolveUrl(url) {
     return new URL(url, window.location.href);
   }
@@ -473,6 +540,7 @@ const SPARouter = (() => {
   }
 
   function warmPage(url) {
+    if (!canWarmResources()) return;
     const cacheKey = getPageCacheKey(url);
     if (prefetched.has(cacheKey) || pageCache.has(cacheKey)) return;
 
@@ -483,6 +551,7 @@ const SPARouter = (() => {
   }
 
   function warmPostDetail(link) {
+    if (!canWarmResources()) return;
     if (!link?.href || !link.href.startsWith(window.location.origin)) return;
     if (link.dataset.preloaded === "true") return;
 
@@ -607,7 +676,10 @@ const SPARouter = (() => {
       return;
     }
 
-    const link = e.target.closest("a");
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+
+    const link = target.closest("a");
     if (!link || !link.href || link.target === "_blank" || link.hasAttribute("download")) return;
 
     const u = resolveUrl(link.href);
@@ -623,29 +695,45 @@ const SPARouter = (() => {
   window.addEventListener("popstate", () => navigate(window.location.href, false));
 
   // 悬停预取页面 HTML + Notion 数据
-  document.addEventListener("mouseover", (e) => {
-    const link = e.target.closest("a");
+  document.addEventListener("pointerover", (e) => {
+    if (e.pointerType === "touch" || !canWarmResources()) return;
+
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+
+    const link = target.closest("a");
     if (link && link.href && link.href.startsWith(window.location.origin)) {
       warmPage(link.href);
     }
     // Notion 数据预加载
-    const card = e.target.closest("a.blog-card");
-    if (card && card.href) {
-      warmPostDetail(card);
+    const card = target.closest("a.blog-card");
+    const hoveredCard = target.closest("a.blog-card");
+    if (hoveredCard && hoveredCard.href) {
+      warmPostDetail(hoveredCard);
     }
+  }, {
+    passive: true,
   });
 
   document.addEventListener("pointerdown", (e) => {
-    const card = e.target.closest("a.blog-card");
-    if (card && card.href) {
-      warmPostDetail(card);
+    if (!canWarmResources()) return;
+
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+
+    const pressedCard = target.closest("a.blog-card");
+    if (pressedCard && pressedCard.href) {
+      warmPostDetail(pressedCard);
     }
   }, {
     passive: true,
   });
 
   document.addEventListener("focusin", (e) => {
-    const link = e.target.closest?.("a");
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+
+    const link = target.closest("a");
     if (link && link.href && link.href.startsWith(window.location.origin)) {
       warmPage(link.href);
     }

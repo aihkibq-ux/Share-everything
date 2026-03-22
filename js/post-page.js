@@ -44,6 +44,7 @@
     let backClickHandler = null;
     let bookmarkControlsVisible = false;
     let mediaQueryCleanup = null;
+    let readingHistoryHandle = null;
 
     function cleanupBookmarkHandlers() {
       if (!bookmarkBindings.length) return;
@@ -52,6 +53,18 @@
         element.removeEventListener("click", handler);
       });
       bookmarkBindings = [];
+    }
+
+    function clearReadingHistoryTask() {
+      if (readingHistoryHandle == null) return;
+
+      if ("cancelIdleCallback" in window) {
+        window.cancelIdleCallback(readingHistoryHandle);
+      } else {
+        clearTimeout(readingHistoryHandle);
+      }
+
+      readingHistoryHandle = null;
     }
 
     function setBookmarkControlsVisible(isVisible) {
@@ -153,6 +166,25 @@
       }
     }
 
+    function scheduleReadingHistorySave(post) {
+      clearReadingHistoryTask();
+
+      const persistHistory = () => {
+        readingHistoryHandle = null;
+        if (!isDisposed) {
+          saveReadingHistory(post);
+        }
+      };
+
+      if ("requestIdleCallback" in window) {
+        readingHistoryHandle = window.requestIdleCallback(persistHistory, {
+          timeout: 900,
+        });
+      } else {
+        readingHistoryHandle = window.setTimeout(persistHistory, 180);
+      }
+    }
+
     function initBookmark(post) {
       if (!bookmarkManager || !bookmarkElements.length) {
         setBookmarkControlsVisible(false);
@@ -237,7 +269,7 @@
         contentEl.style.display = "block";
         contentEl.style.animation = "fadeInUp 0.6s ease both";
 
-        saveReadingHistory(post);
+        scheduleReadingHistorySave(post);
         initBookmark(post);
       } catch (error) {
         if (isDisposed) return;
@@ -255,6 +287,7 @@
       cleanupBookmarkHandlers();
       cleanupBackHandler();
       mediaQueryCleanup?.();
+      clearReadingHistoryTask();
     };
   }
 

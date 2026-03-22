@@ -31,6 +31,7 @@
     let renderToken = 0;
     let searchDebounce = null;
     let detailWarmupHandle = null;
+    let historySaveHandle = null;
 
     const params = new URLSearchParams(window.location.search);
     if (params.get("category")) currentCategory = params.get("category");
@@ -52,6 +53,18 @@
       }
 
       detailWarmupHandle = null;
+    }
+
+    function clearHistorySave() {
+      if (historySaveHandle == null) return;
+
+      if ("cancelIdleCallback" in window) {
+        window.cancelIdleCallback(historySaveHandle);
+      } else {
+        clearTimeout(historySaveHandle);
+      }
+
+      historySaveHandle = null;
     }
 
     function renderEmptyStateMarkup({
@@ -178,6 +191,23 @@
         localStorage.setItem("blog_history", JSON.stringify(entries.slice(0, 50)));
       } catch (error) {
         // localStorage unavailable
+      }
+    }
+
+    function scheduleHistorySave() {
+      clearHistorySave();
+
+      const persistHistory = () => {
+        historySaveHandle = null;
+        saveHistory();
+      };
+
+      if ("requestIdleCallback" in window) {
+        historySaveHandle = window.requestIdleCallback(persistHistory, {
+          timeout: 900,
+        });
+      } else {
+        historySaveHandle = window.setTimeout(persistHistory, 180);
       }
     }
 
@@ -326,7 +356,7 @@
           window.initBlogCardReveal?.();
         });
 
-        saveHistory();
+        scheduleHistorySave();
       } catch (error) {
         if (currentToken !== renderToken) return;
 
@@ -434,6 +464,7 @@
       gridEl.removeEventListener("error", handleGridMediaError, true);
       emptyEl.removeEventListener("click", handleEmptyStateClick);
       clearDetailWarmup();
+      clearHistorySave();
     };
   }
 
