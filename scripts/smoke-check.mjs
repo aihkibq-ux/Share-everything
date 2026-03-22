@@ -46,11 +46,14 @@ expectIncludes(blogHtml, 'id="blogGrid" role="list"', "blog grid should expose l
 expectIncludes(commonJs, "page-progress", "common.js should wire the page progress bar");
 expectIncludes(commonJs, 'property="og:image"', "common.js should update og:image metadata");
 expectIncludes(commonJs, "focusSpaContent", "common.js should expose SPA focus management");
+expectIncludes(commonJs, "hasFreshPrefetch", "common.js should expire stale prefetched routes");
+expectIncludes(commonJs, "resolveShareImageUrl", "common.js should normalize stable share images");
 expectIncludes(blogPageJs, 'class="blog-card-link"', "blog cards should render a dedicated link layer");
 expectIncludes(blogPageJs, 'data-post-tags="${serializedTags}"', "blog cards should serialize tags for bookmark fallback");
 expectIncludes(blogPageJs, 'aria-pressed="${bookmarked ? "true" : "false"}"', "bookmark buttons should expose pressed state");
 expectIncludes(blogPageJs, "announceStatus(", "blog page should announce result updates");
 expectIncludes(bookmarkJs, "parseSerializedTags", "bookmark fallback should recover serialized tags");
+expectIncludes(bookmarkJs, "hydrateMissingMetadata", "bookmark manager should hydrate legacy metadata");
 expectIncludes(notionApiJs, "collectManagedCacheEntries", "notion cache should evict older entries on quota pressure");
 expectIncludes(postPageJs, 'window.StructuredData?.set?.("post-article"', "post page should publish article structured data");
 

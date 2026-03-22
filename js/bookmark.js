@@ -5,10 +5,12 @@
 
 const BookmarkManager = (() => {
   const BOOKMARK_KEY = "bookmarked_posts";
+  const BOOKMARK_METADATA_VERSION = 2;
   const siteUtils = window.SiteUtils || {};
   const sanitizeImageUrl = siteUtils.sanitizeImageUrl;
   const sanitizeCoverBackground = siteUtils.sanitizeCoverBackground;
   let bookmarksCache = null;
+  let metadataHydrationPromise = null;
 
   function escapeSelectorValue(value) {
     if (window.CSS?.escape) {
@@ -71,6 +73,11 @@ const BookmarkManager = (() => {
     const title = normalizeText(entry.title);
     const excerpt = normalizeText(entry.excerpt);
     const tags = normalizeTags(entry.tags);
+    const metadataVersion = Number.isFinite(Number(entry.metadataVersion))
+      ? Number(entry.metadataVersion)
+      : tags.length > 0
+        ? BOOKMARK_METADATA_VERSION
+        : 1;
 
     return {
       id,
@@ -86,6 +93,7 @@ const BookmarkManager = (() => {
           ? sanitizeCoverBackground(entry.coverGradient)
           : null,
       tags,
+      metadataVersion,
       _searchText: buildBookmarkSearchText({ title, excerpt, tags }),
       timestamp: Number.isFinite(Number(entry.timestamp)) ? Number(entry.timestamp) : Date.now(),
     };
@@ -93,6 +101,14 @@ const BookmarkManager = (() => {
 
   function isBookmarked(id) {
     return readBookmarks().some(b => b.id === id);
+  }
+
+  function needsMetadataHydration(bookmark) {
+    return Number(bookmark?.metadataVersion || 0) < BOOKMARK_METADATA_VERSION;
+  }
+
+  function hasLegacyMetadata() {
+    return readBookmarks().some(needsMetadataHydration);
   }
 
   function parseSerializedTags(value) {
@@ -128,6 +144,7 @@ const BookmarkManager = (() => {
         coverEmoji: post.coverEmoji || "📝",
         coverGradient: post.coverGradient || null,
         tags: Array.isArray(post.tags) ? post.tags : [],
+        metadataVersion: BOOKMARK_METADATA_VERSION,
         timestamp: Date.now(),
       });
       if (!normalizedBookmark) return exists;
@@ -156,6 +173,7 @@ const BookmarkManager = (() => {
       if (cachedSummary) {
         const normalizedBookmark = normalizeBookmark({
           ...cachedSummary,
+          metadataVersion: BOOKMARK_METADATA_VERSION,
           timestamp: Date.now(),
         });
         if (normalizedBookmark) {
@@ -185,6 +203,7 @@ const BookmarkManager = (() => {
             coverEmoji: emoji?.textContent || '📝',
             coverGradient: null,
             tags,
+            metadataVersion: tags.length > 0 ? BOOKMARK_METADATA_VERSION : 1,
             timestamp: Date.now(),
           });
           if (normalizedBookmark) {
@@ -200,6 +219,68 @@ const BookmarkManager = (() => {
     return !exists;
   }
 
+  async function hydrateMissingMetadata() {
+    if (metadataHydrationPromise) {
+      return metadataHydrationPromise;
+    }
+
+    if (typeof window.NotionAPI?.getPost !== "function") {
+      return false;
+    }
+
+    const bookmarks = getAll();
+    const pendingHydration = bookmarks.filter(needsMetadataHydration);
+    if (pendingHydration.length === 0) {
+      return false;
+    }
+
+    metadataHydrationPromise = (async () => {
+      let nextBookmarks = bookmarks;
+      let didHydrate = false;
+
+      for (const bookmark of pendingHydration) {
+        let source = window.NotionAPI?.getPostSummary?.(bookmark.id) || null;
+        if (!source) {
+          try {
+            source = await window.NotionAPI.getPost(bookmark.id);
+          } catch (error) {
+            source = null;
+          }
+        }
+
+        if (!source) {
+          continue;
+        }
+
+        const hydratedBookmark = normalizeBookmark({
+          ...bookmark,
+          ...source,
+          metadataVersion: BOOKMARK_METADATA_VERSION,
+          timestamp: bookmark.timestamp,
+        });
+
+        if (!hydratedBookmark) {
+          continue;
+        }
+
+        nextBookmarks = nextBookmarks.map((entry) => (
+          entry.id === hydratedBookmark.id ? hydratedBookmark : entry
+        ));
+        didHydrate = true;
+      }
+
+      if (didHydrate) {
+        save(nextBookmarks);
+      }
+
+      return didHydrate;
+    })().finally(() => {
+      metadataHydrationPromise = null;
+    });
+
+    return metadataHydrationPromise;
+  }
+
   window.addEventListener("storage", (event) => {
     if (event.key !== BOOKMARK_KEY) return;
     try {
@@ -212,7 +293,14 @@ const BookmarkManager = (() => {
     }
   });
 
-  return { getAll, isBookmarked, toggle, toggleById };
+  return {
+    getAll,
+    isBookmarked,
+    hasLegacyMetadata,
+    hydrateMissingMetadata,
+    toggle,
+    toggleById,
+  };
 })();
 
 window.BookmarkManager = BookmarkManager;

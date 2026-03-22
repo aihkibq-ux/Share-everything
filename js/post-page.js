@@ -3,6 +3,7 @@
     const notionApi = window.NotionAPI;
     const siteUtils = window.SiteUtils || {};
     const bookmarkManager = window.BookmarkManager || null;
+    const defaultShareImageUrl = new URL("favicon.png?v=2", window.location.origin).href;
 
     const params = new URLSearchParams(window.location.search);
     const postId = params.get("id");
@@ -273,6 +274,10 @@
         contentEl.style.animation = "fadeInUp 0.6s ease both";
         const canonicalUrl = new URL(window.location.href);
         canonicalUrl.hash = "";
+        const structuredDataImage =
+          typeof siteUtils.resolveShareImageUrl === "function"
+            ? siteUtils.resolveShareImageUrl(post.coverImage, defaultShareImageUrl)
+            : defaultShareImageUrl;
         window.StructuredData?.set?.("post-article", {
           "@context": "https://schema.org",
           "@type": "Article",
@@ -282,7 +287,7 @@
           keywords: Array.isArray(post.tags) ? post.tags.join(", ") : undefined,
           datePublished: post.date || undefined,
           dateModified: post.date || undefined,
-          image: post.coverImage ? [post.coverImage] : [new URL("favicon.png?v=2", window.location.origin).href],
+          image: [structuredDataImage],
           mainEntityOfPage: canonicalUrl.href,
           url: canonicalUrl.href,
           author: {
@@ -293,8 +298,8 @@
             "@type": "Organization",
             name: "Share Everything",
             logo: {
-              "@type": "ImageObject",
-              url: new URL("favicon.png?v=2", window.location.origin).href,
+            "@type": "ImageObject",
+              url: defaultShareImageUrl,
             },
           },
         });

@@ -307,10 +307,41 @@ function sanitizeCoverBackground(value, fallback = null) {
   return trimmed;
 }
 
+function isLikelyEphemeralAssetUrl(candidate) {
+  if (!candidate || typeof candidate !== "string") return false;
+
+  try {
+    const parsed = new URL(candidate, window.location.href);
+    const expiringQueryKeys = [
+      "X-Amz-Algorithm",
+      "X-Amz-Credential",
+      "X-Amz-Date",
+      "X-Amz-Expires",
+      "X-Amz-Signature",
+      "Expires",
+      "Signature",
+    ];
+
+    return expiringQueryKeys.some((key) => parsed.searchParams.has(key));
+  } catch (error) {
+    return false;
+  }
+}
+
+function resolveShareImageUrl(candidate, fallback = null) {
+  const safeUrl = sanitizeImageUrl(candidate);
+  if (!safeUrl || isLikelyEphemeralAssetUrl(safeUrl)) {
+    return fallback;
+  }
+
+  return safeUrl;
+}
+
 window.SiteUtils = Object.freeze({
   createMediaQueryList,
   sanitizeImageUrl,
   sanitizeCoverBackground,
+  resolveShareImageUrl,
 });
 
 const cursorGlow = document.getElementById("cursorGlow");
@@ -448,7 +479,7 @@ const DEFAULT_OG_IMAGE_URL = new URL("favicon.png?v=2", window.location.origin).
 const DEFAULT_OG_IMAGE_ALT = "Share Everything";
 
 function sanitizeMetaImageUrl(candidate) {
-  return sanitizeImageUrl(candidate) || DEFAULT_OG_IMAGE_URL;
+  return resolveShareImageUrl(candidate, DEFAULT_OG_IMAGE_URL) || DEFAULT_OG_IMAGE_URL;
 }
 
 function updateSeoMeta({
@@ -799,7 +830,7 @@ const SPARouter = (() => {
   const MAX_PAGE_CACHE_ENTRIES = 6;
   const PAGE_CACHE_TTL_MS = 1000 * 60 * 5;
   const pageCache = new Map();
-  const prefetched = new Set();
+  const prefetched = new Map();
 
   function canWarmResources() {
     return !(connectionInfo?.saveData || /(^|-)2g$/.test(connectionInfo?.effectiveType || ""));
@@ -865,13 +896,28 @@ const SPARouter = (() => {
     if (prefetched.has(cacheKey)) {
       prefetched.delete(cacheKey);
     }
-    prefetched.add(cacheKey);
+    prefetched.set(cacheKey, Date.now());
 
     while (prefetched.size > MAX_PAGE_CACHE_ENTRIES) {
-      const oldestPrefetchedKey = prefetched.values().next().value;
+      const oldestPrefetchedKey = prefetched.keys().next().value;
       if (!oldestPrefetchedKey) break;
       prefetched.delete(oldestPrefetchedKey);
     }
+  }
+
+  function hasFreshPrefetch(cacheKey) {
+    const prefetchedAt = prefetched.get(cacheKey);
+    if (!Number.isFinite(prefetchedAt)) {
+      prefetched.delete(cacheKey);
+      return false;
+    }
+
+    if (Date.now() - prefetchedAt >= PAGE_CACHE_TTL_MS) {
+      prefetched.delete(cacheKey);
+      return false;
+    }
+
+    return true;
   }
 
   function ensureScript(src) {
@@ -919,7 +965,7 @@ const SPARouter = (() => {
   function warmPage(url) {
     if (!canWarmResources()) return;
     const cacheKey = getPageCacheKey(url);
-    if (prefetched.has(cacheKey) || readPageHtmlFromCache(cacheKey)) return;
+    if (hasFreshPrefetch(cacheKey) || readPageHtmlFromCache(cacheKey)) return;
 
     rememberPrefetchedPage(cacheKey);
     fetchPageHtml(url).catch(() => {

@@ -369,6 +369,10 @@
         let data;
 
         if (currentCategory === "收藏") {
+          if (typeof bookmarkManager.hasLegacyMetadata === "function" && bookmarkManager.hasLegacyMetadata()) {
+            await bookmarkManager.hydrateMissingMetadata?.();
+          }
+
           let bookmarks = bookmarkManager.getAll();
 
           if (currentSearch) {
