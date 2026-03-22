@@ -37,12 +37,16 @@ const BookmarkManager = (() => {
   }
 
   function save(bookmarks) {
-    bookmarksCache = Array.isArray(bookmarks)
+    const nextBookmarks = Array.isArray(bookmarks)
       ? bookmarks.map(normalizeBookmark).filter(Boolean)
       : [];
     try {
-      localStorage.setItem(BOOKMARK_KEY, JSON.stringify(bookmarksCache));
-    } catch (e) {}
+      localStorage.setItem(BOOKMARK_KEY, JSON.stringify(nextBookmarks));
+      bookmarksCache = nextBookmarks;
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   function normalizeText(value, fallback = "") {
@@ -124,7 +128,7 @@ const BookmarkManager = (() => {
   /**
    * 切换书签状态（通过完整的 post 对象）
    * 适用于 post.html 已有完整数据的场景
-   * @returns {boolean} 切换后的新状态（true = 已收藏）
+   * @returns {boolean | null} 切换后的新状态；持久化失败时返回 null
    */
   function toggle(post) {
     let bookmarks = getAll();
@@ -147,18 +151,18 @@ const BookmarkManager = (() => {
         metadataVersion: BOOKMARK_METADATA_VERSION,
         timestamp: Date.now(),
       });
-      if (!normalizedBookmark) return exists;
+      if (!normalizedBookmark) return null;
       bookmarks.unshift(normalizedBookmark);
     }
 
-    save(bookmarks);
+    if (!save(bookmarks)) return null;
     return !exists;
   }
 
   /**
    * 从 DOM 卡片元素中提取信息并切换书签
    * 适用于 blog.html 列表页中没有完整 post 对象的场景
-   * @returns {boolean} 切换后的新状态（true = 已收藏）
+   * @returns {boolean | null} 切换后的新状态；失败时返回 null
    */
   function toggleById(postId) {
     let bookmarks = getAll();
@@ -214,8 +218,8 @@ const BookmarkManager = (() => {
       }
     }
 
-    if (!didPersist) return exists;
-    save(bookmarks);
+    if (!didPersist) return null;
+    if (!save(bookmarks)) return null;
     return !exists;
   }
 
@@ -270,7 +274,9 @@ const BookmarkManager = (() => {
       }
 
       if (didHydrate) {
-        save(nextBookmarks);
+        if (!save(nextBookmarks)) {
+          return false;
+        }
       }
 
       return didHydrate;

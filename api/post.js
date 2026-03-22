@@ -47,12 +47,13 @@ function injectInitialPostData(html, payload) {
   return html.replace("</main>", `${scriptTag}\n    </main>`);
 }
 
-function replaceHeadMeta(html, { title, description, url, image, imageAlt, canonicalUrl, robots }) {
+function replaceHeadMeta(html, { title, description, url, image, imageAlt, canonicalUrl, robots, ogType }) {
   const replacements = [
     [/<title>[\s\S]*?<\/title>/, `<title>${escapeHtml(title)}</title>`],
     [/<meta name="description" content="[^"]*" \/>/, `<meta name="description" content="${escapeAttribute(description)}" />`],
     [/<meta property="og:title" content="[^"]*" \/>/, `<meta property="og:title" content="${escapeAttribute(title)}" />`],
     [/<meta property="og:description" content="[^"]*" \/>/, `<meta property="og:description" content="${escapeAttribute(description)}" />`],
+    [/<meta property="og:type" content="[^"]*" \/>/, `<meta property="og:type" content="${escapeAttribute(ogType || "website")}" />`],
     [/<meta property="og:url" content="[^"]*" \/>/, `<meta property="og:url" content="${escapeAttribute(url)}" />`],
     [/<meta property="og:image" content="[^"]*" \/>/, `<meta property="og:image" content="${escapeAttribute(image)}" />`],
     [/<meta property="og:image:alt" content="[^"]*" \/>/, `<meta property="og:image:alt" content="${escapeAttribute(imageAlt)}" />`],
@@ -63,7 +64,7 @@ function replaceHeadMeta(html, { title, description, url, image, imageAlt, canon
     nextHtml = nextHtml.replace(pattern, replacement);
   });
 
-  if (robots) {
+  if (typeof robots === "string" && robots) {
     if (/<meta name="robots" content="[^"]*" \/>/.test(nextHtml)) {
       nextHtml = nextHtml.replace(
         /<meta name="robots" content="[^"]*" \/>/,
@@ -75,6 +76,8 @@ function replaceHeadMeta(html, { title, description, url, image, imageAlt, canon
         `$1\n    <meta name="robots" content="${escapeAttribute(robots)}" />`,
       );
     }
+  } else {
+    nextHtml = nextHtml.replace(/\s*<meta name="robots" content="[^"]*" \/>/, "");
   }
 
   if (/<link rel="canonical" href="[^"]*" \/>/.test(nextHtml)) {
@@ -88,6 +91,20 @@ function replaceHeadMeta(html, { title, description, url, image, imageAlt, canon
       `$1\n    <link rel="canonical" href="${escapeAttribute(canonicalUrl)}" />`,
     );
   }
+
+  return nextHtml;
+}
+
+function replaceEmptyStateContent(html, { message, linkText = "返回博客列表" }) {
+  let nextHtml = html.replace(
+    /(<div class="empty-state" id="postEmpty"[^>]*>[\s\S]*?<\/svg>\s*<p>)[\s\S]*?(<\/p>)/,
+    `$1${escapeHtml(message)}$2`,
+  );
+
+  nextHtml = nextHtml.replace(
+    /(<div class="empty-state" id="postEmpty"[^>]*>[\s\S]*?<p style="font-size: 0\.85rem;">\s*<a href=")[^"]*("[^>]*>)[\s\S]*?(<\/a>)/,
+    `$1/blog.html$2${escapeHtml(linkText)}$3`,
+  );
 
   return nextHtml;
 }
@@ -132,10 +149,61 @@ function buildServerRenderedArticle(post) {
 
 function buildNotFoundContent() {
   return {
-    title: "文章不存在 — Share Everything",
+    title: "文章不存在 - Share Everything",
     description: "未找到对应的文章内容。",
+    message: "文章不存在",
+    linkText: "返回博客列表",
+    ogType: "website",
     robots: "noindex, nofollow",
   };
+}
+
+function buildUnavailableContent() {
+  return {
+    title: "文章暂时不可用 - Share Everything",
+    description: "文章内容暂时无法加载，请稍后再试。",
+    message: "文章暂时不可用",
+    linkText: "返回博客列表",
+    ogType: "website",
+    robots: "noindex, nofollow",
+  };
+}
+
+function isMissingPostError(error) {
+  const status = Number(error?.status);
+  return status === 404 || (status === 400 && error?.notionCode === "validation_error");
+}
+
+function getPostErrorStatus(error) {
+  if (isMissingPostError(error)) {
+    return 404;
+  }
+
+  if (Number(error?.status) === 500 && error?.code === "notion_config_error") {
+    return 500;
+  }
+
+  return 502;
+}
+
+function renderFallbackPage(html, fallback, { url, canonicalUrl, image, imageAlt }) {
+  let nextHtml = replaceHeadMeta(html, {
+    title: fallback.title,
+    description: fallback.description,
+    url,
+    image,
+    imageAlt,
+    canonicalUrl,
+    robots: fallback.robots,
+    ogType: fallback.ogType,
+  });
+  nextHtml = replaceEmptyStateContent(nextHtml, {
+    message: fallback.message,
+    linkText: fallback.linkText,
+  });
+  nextHtml = nextHtml.replace('<div id="postSkeleton">', '<div id="postSkeleton" style="display: none;">');
+  nextHtml = nextHtml.replace('id="postEmpty" style="display: none;"', 'id="postEmpty" style="display: flex;"');
+  return nextHtml;
 }
 
 module.exports = async function handler(req, res) {
@@ -148,17 +216,12 @@ module.exports = async function handler(req, res) {
 
   if (!routeId) {
     const fallback = buildNotFoundContent();
-    html = replaceHeadMeta(html, {
-      title: fallback.title,
-      description: fallback.description,
+    html = renderFallbackPage(html, fallback, {
       url: `${siteOrigin}/post.html`,
+      canonicalUrl: `${siteOrigin}/post.html`,
       image: defaultShareImageUrl,
       imageAlt: "Share Everything",
-      canonicalUrl: `${siteOrigin}/post.html`,
-      robots: fallback.robots,
     });
-    html = html.replace('<div id="postSkeleton">', '<div id="postSkeleton" style="display: none;">');
-    html = html.replace('id="postEmpty" style="display: none;"', 'id="postEmpty" style="display: flex;"');
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
     return res.status(404).send(html);
@@ -180,6 +243,7 @@ module.exports = async function handler(req, res) {
       imageAlt: post.title,
       canonicalUrl: postUrl,
       robots: "index, follow",
+      ogType: "article",
     });
 
     html = html.replace('<div id="postSkeleton">', '<div id="postSkeleton" style="display: none;">');
@@ -194,20 +258,20 @@ module.exports = async function handler(req, res) {
     res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=60");
     return res.status(200).send(html);
   } catch (error) {
-    const fallback = buildNotFoundContent();
-    html = replaceHeadMeta(html, {
-      title: fallback.title,
-      description: fallback.description,
+    const status = getPostErrorStatus(error);
+    const fallback = status === 404 ? buildNotFoundContent() : buildUnavailableContent();
+    if (status !== 404) {
+      console.error("Failed to render post route:", error);
+    }
+
+    html = renderFallbackPage(html, fallback, {
       url: buildPostUrl(routeId),
+      canonicalUrl: buildPostUrl(routeId),
       image: defaultShareImageUrl,
       imageAlt: "Share Everything",
-      canonicalUrl: buildPostUrl(routeId),
-      robots: fallback.robots,
     });
-    html = html.replace('<div id="postSkeleton">', '<div id="postSkeleton" style="display: none;">');
-    html = html.replace('id="postEmpty" style="display: none;"', 'id="postEmpty" style="display: flex;"');
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
-    return res.status(404).send(html);
+    return res.status(status).send(html);
   }
 };

@@ -242,6 +242,9 @@ window.addEventListener("touchstart", () => (targetSpeedMultiplier = 20), {
 window.addEventListener("touchend", () => (targetSpeedMultiplier = 1), {
   passive: true,
 });
+window.addEventListener("touchcancel", () => (targetSpeedMultiplier = 1), {
+  passive: true,
+});
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => scheduleParticleBootstrap(), {
@@ -602,6 +605,8 @@ function updateSeoMeta({
   ogDescription = description,
   ogImage = DEFAULT_OG_IMAGE_URL,
   ogImageAlt = DEFAULT_OG_IMAGE_ALT,
+  ogType,
+  robots,
 } = {}) {
   const resolvedUrl = new URL(url, window.location.href);
   resolvedUrl.hash = "";
@@ -631,6 +636,12 @@ function updateSeoMeta({
     }).content = ogDescription;
   }
 
+  if (typeof ogType === "string" && ogType) {
+    ensureMetaTag('meta[property="og:type"]', {
+      property: "og:type",
+    }).content = ogType;
+  }
+
   ensureMetaTag('meta[property="og:url"]', {
     property: "og:url",
   }).content = resolvedUrl.href;
@@ -644,6 +655,14 @@ function updateSeoMeta({
   ensureLinkTag('link[rel="canonical"]', {
     rel: "canonical",
   }).href = resolvedCanonicalUrl.href;
+
+  if (typeof robots === "string" && robots) {
+    ensureMetaTag('meta[name="robots"]', {
+      name: "robots",
+    }).content = robots;
+  } else if (robots === null) {
+    document.head?.querySelector('meta[name="robots"]')?.remove();
+  }
 }
 
 window.updateSeoMeta = updateSeoMeta;
@@ -657,7 +676,10 @@ updateSeoMeta({
   ogImage: document.querySelector('meta[property="og:image"]')?.content || DEFAULT_OG_IMAGE_URL,
   ogImageAlt:
     document.querySelector('meta[property="og:image:alt"]')?.content || DEFAULT_OG_IMAGE_ALT,
+  ogType: document.querySelector('meta[property="og:type"]')?.content || "website",
+  robots: document.querySelector('meta[name="robots"]')?.content ?? null,
   url: window.location.href,
+  canonicalUrl: document.querySelector('link[rel="canonical"]')?.href || window.location.href,
 });
 
 function ensureStructuredDataTag(key) {
@@ -1175,14 +1197,20 @@ const SPARouter = (() => {
         doc.querySelector('meta[property="og:image"]')?.content || DEFAULT_OG_IMAGE_URL;
       const nextOgImageAlt =
         doc.querySelector('meta[property="og:image:alt"]')?.content || nextTitle || DEFAULT_OG_IMAGE_ALT;
+      const nextOgType = doc.querySelector('meta[property="og:type"]')?.content || "website";
+      const nextRobots = doc.querySelector('meta[name="robots"]')?.content ?? null;
+      const nextCanonicalUrl = doc.querySelector('link[rel="canonical"]')?.href || targetUrl.href;
       updateSeoMeta({
         title: nextTitle,
         description: nextDescription,
         url: targetUrl.href,
+        canonicalUrl: nextCanonicalUrl,
         ogTitle: nextOgTitle,
         ogDescription: nextOgDescription,
         ogImage: nextOgImage,
         ogImageAlt: nextOgImageAlt,
+        ogType: nextOgType,
+        robots: nextRobots,
       });
 
       // ⑤ 替换内容

@@ -45,25 +45,72 @@ function getSiteOrigin() {
   return DEFAULT_SITE_ORIGIN.replace(/\/+$/, "");
 }
 
+function createNotionRequestError(message, { status = 500, code = "notion_request_error", notionCode = "", detail = "", cause } = {}) {
+  const error = new Error(message);
+  error.name = "NotionRequestError";
+  error.status = status;
+  error.code = code;
+  error.notionCode = notionCode;
+  error.detail = detail;
+  if (cause) {
+    error.cause = cause;
+  }
+  return error;
+}
+
 async function requestNotionJson(path, init = {}) {
   const notionToken = getNotionToken();
   if (!notionToken) {
-    throw new Error("NOTION_TOKEN is not configured");
+    throw createNotionRequestError("NOTION_TOKEN is not configured", {
+      status: 500,
+      code: "notion_config_error",
+    });
   }
 
-  const response = await fetch(`${NOTION_BASE}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${notionToken}`,
-      "Notion-Version": NOTION_VERSION,
-      "Content-Type": "application/json",
-      ...(init.headers || {}),
-    },
-  });
+  let response;
+  try {
+    response = await fetch(`${NOTION_BASE}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${notionToken}`,
+        "Notion-Version": NOTION_VERSION,
+        "Content-Type": "application/json",
+        ...(init.headers || {}),
+      },
+    });
+  } catch (error) {
+    throw createNotionRequestError("Failed to reach Notion API", {
+      status: 502,
+      code: "notion_network_error",
+      cause: error,
+    });
+  }
 
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`Notion API error: ${response.status}${detail ? ` ${detail}` : ""}`);
+    const rawDetail = await response.text().catch(() => "");
+    let detail = rawDetail;
+    let notionCode = "";
+
+    if (rawDetail) {
+      try {
+        const parsedDetail = JSON.parse(rawDetail);
+        if (typeof parsedDetail?.message === "string" && parsedDetail.message) {
+          detail = parsedDetail.message;
+        }
+        if (typeof parsedDetail?.code === "string" && parsedDetail.code) {
+          notionCode = parsedDetail.code;
+        }
+      } catch {
+        // Keep the raw response body when it is not JSON.
+      }
+    }
+
+    throw createNotionRequestError(`Notion API error: ${response.status}${detail ? ` ${detail}` : ""}`, {
+      status: response.status,
+      code: "notion_api_error",
+      notionCode,
+      detail: detail || rawDetail,
+    });
   }
 
   return response.json();

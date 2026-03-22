@@ -52,6 +52,17 @@ const NotionAPI = (() => {
   const postSummaryMemoryCache = new Map();
   const postSummaryTimestampCache = new Map();
 
+  function createRequestError(message, { status, notionCode } = {}) {
+    const error = new Error(message);
+    if (Number.isFinite(Number(status))) {
+      error.status = Number(status);
+    }
+    if (typeof notionCode === "string" && notionCode) {
+      error.notionCode = notionCode;
+    }
+    return error;
+  }
+
   function isManagedCacheKey(key) {
     return typeof key === "string" && CACHE_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
   }
@@ -252,12 +263,35 @@ const NotionAPI = (() => {
         if (allow400AsEmpty && res.status === 400) {
           return { results: [], has_more: false, next_cursor: null };
         }
-        throw new Error(`Notion API error: ${res.status}`);
+        const rawDetail = await res.text().catch(() => "");
+        let detail = rawDetail;
+        let notionCode = "";
+
+        if (rawDetail) {
+          try {
+            const parsedDetail = JSON.parse(rawDetail);
+            if (typeof parsedDetail?.message === "string" && parsedDetail.message) {
+              detail = parsedDetail.message;
+            }
+            if (typeof parsedDetail?.code === "string" && parsedDetail.code) {
+              notionCode = parsedDetail.code;
+            }
+          } catch (parseError) {
+            // Keep the raw response body when it is not JSON.
+          }
+        }
+
+        throw createRequestError(`Notion API error: ${res.status}${detail ? ` ${detail}` : ""}`, {
+          status: res.status,
+          notionCode,
+        });
       }
       return res.json();
     } catch (error) {
       if (error?.name === "AbortError") {
-        throw new Error("Notion API request timed out");
+        throw createRequestError("Notion API request timed out", {
+          status: 504,
+        });
       }
       throw error;
     } finally {

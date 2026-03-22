@@ -5,7 +5,7 @@
     const bookmarkManager = window.BookmarkManager || {
       getAll: () => [],
       isBookmarked: () => false,
-      toggleById: () => false,
+      toggleById: () => null,
     };
 
     const filtersEl = document.getElementById("blogFilters");
@@ -20,13 +20,6 @@
       return null;
     }
 
-    if (!notionApi) {
-      console.error("NotionAPI is unavailable on blog page.");
-      filtersEl.replaceChildren();
-      showEmptyState();
-      return null;
-    }
-
     let currentCategory = "全部";
     let currentSearch = "";
     let currentPage = 1;
@@ -38,11 +31,33 @@
     let statusAnnouncementHandle = null;
     let metadataHydrationTask = null;
     let isDisposed = false;
+    const supportedCategories = new Set(["全部", "精选", "技术", "随想", "教程", "工具", "收藏"]);
 
     const params = new URLSearchParams(window.location.search);
     if (params.get("category")) currentCategory = params.get("category");
     if (params.get("search")) currentSearch = params.get("search");
     if (params.get("page")) currentPage = Math.max(1, parseInt(params.get("page"), 10) || 1);
+    if (!supportedCategories.has(currentCategory)) currentCategory = "全部";
+
+    if (!notionApi) {
+      console.error("NotionAPI is unavailable on blog page.");
+      searchInput.value = currentSearch;
+      updatePageUI();
+      if (typeof siteUtils.rememberBlogReturnUrl === "function") {
+        siteUtils.rememberBlogReturnUrl(window.location.href);
+      }
+      filtersEl.replaceChildren();
+      showEmptyState({
+        title: "加载失败",
+        hint: currentSearch
+          ? `搜索“${currentSearch}”的文章数据暂时不可用，请稍后重试。`
+          : "文章数据暂时不可用，请稍后重试。",
+        announcement: currentSearch
+          ? `搜索“${currentSearch}”的文章数据暂时不可用。`
+          : "文章数据暂时不可用。",
+      });
+      return null;
+    }
 
     const categories = notionApi.getCategories();
     const pageSize = notionApi.getPageSize?.() || 9;
@@ -462,6 +477,10 @@
       const postId = button.dataset.bookmarkId;
       const nowBookmarked = bookmarkManager.toggleById(postId);
       const postTitle = button.dataset.bookmarkTitle || "Untitled";
+      if (nowBookmarked === null) {
+        announceStatus(`收藏失败，请稍后重试：${postTitle}。`);
+        return;
+      }
       const bookmarkAriaLabel = `${nowBookmarked ? "取消收藏" : "收藏"}文章：${postTitle}`;
 
       button.classList.toggle("bookmarked", nowBookmarked);

@@ -21,6 +21,12 @@ const NOTION_ID_PATTERN = /^[0-9a-fA-F-]{32,36}$/;
 const BLOCK_CHILDREN_QUERY_PARAMS = new Set(["page_size", "start_cursor"]);
 const rateLimitStore = new Map();
 
+function getNotionToken() {
+  return typeof process.env.NOTION_TOKEN === "string"
+    ? process.env.NOTION_TOKEN.trim()
+    : "";
+}
+
 function getAllowedOrigins() {
   const configured = (process.env.ALLOWED_ORIGINS || "")
     .split(",")
@@ -272,12 +278,17 @@ module.exports = async function handler(req, res) {
   }
 
   const notionUrl = `${NOTION_BASE}/${allowedPathInfo.notionPath}${queryString}`;
+  const notionToken = getNotionToken();
+  if (!notionToken) {
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(500).json({ error: "NOTION_TOKEN is not configured" });
+  }
 
   try {
     const fetchOptions = {
       method: req.method,
       headers: {
-        Authorization: `Bearer ${process.env.NOTION_TOKEN}`,
+        Authorization: `Bearer ${notionToken}`,
         "Notion-Version": "2022-06-28",
         "Content-Type": "application/json",
       },
