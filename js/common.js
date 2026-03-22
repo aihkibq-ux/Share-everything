@@ -370,16 +370,91 @@ function buildPostUrl(postId) {
   return new URL(buildPostPath(postId), window.location.origin).href;
 }
 
+const BLOG_RETURN_URL_STORAGE_KEY = "spa:last-blog-url";
+
+function isBlogPageUrl(url = window.location.href) {
+  try {
+    const resolved = new URL(url, window.location.origin);
+    if (resolved.origin !== window.location.origin) {
+      return false;
+    }
+
+    const normalizedPath =
+      resolved.pathname === "/"
+        ? "/index.html"
+        : resolved.pathname.endsWith("/")
+          ? `${resolved.pathname}index.html`
+          : resolved.pathname;
+
+    return normalizedPath.endsWith("/blog.html");
+  } catch (error) {
+    return false;
+  }
+}
+
+function rememberBlogReturnUrl(url = window.location.href) {
+  if (!isBlogPageUrl(url)) {
+    return null;
+  }
+
+  const resolved = new URL(url, window.location.origin).href;
+
+  try {
+    sessionStorage.setItem(BLOG_RETURN_URL_STORAGE_KEY, resolved);
+  } catch (error) {
+    // sessionStorage unavailable
+  }
+
+  return resolved;
+}
+
+function readStoredBlogReturnUrl() {
+  try {
+    const storedUrl = sessionStorage.getItem(BLOG_RETURN_URL_STORAGE_KEY);
+    if (!storedUrl || !isBlogPageUrl(storedUrl)) {
+      return null;
+    }
+
+    return new URL(storedUrl, window.location.origin).href;
+  } catch (error) {
+    return null;
+  }
+}
+
+function getPreferredBlogReturnUrl({ fallback = "/blog.html" } = {}) {
+  const rememberedUrl = readStoredBlogReturnUrl();
+  if (rememberedUrl) {
+    return rememberedUrl;
+  }
+
+  if (typeof document.referrer === "string" && isBlogPageUrl(document.referrer)) {
+    try {
+      return new URL(document.referrer, window.location.origin).href;
+    } catch (error) {
+      // Ignore invalid referrer and fall through to the default route.
+    }
+  }
+
+  return new URL(fallback, window.location.origin).href;
+}
+
 window.SiteUtils = Object.freeze({
   buildPostPath,
   buildPostUrl,
   createMediaQueryList,
+  getPreferredBlogReturnUrl,
   getPostIdFromUrl,
+  isBlogPageUrl,
   normalizePostId,
+  rememberBlogReturnUrl,
   sanitizeImageUrl,
   sanitizeCoverBackground,
   resolveShareImageUrl,
 });
+
+if (isBlogPageUrl(window.location.href)) {
+  rememberBlogReturnUrl(window.location.href);
+}
 
 const cursorGlow = document.getElementById("cursorGlow");
 const finePointerQuery = createMediaQueryList("(hover: hover) and (pointer: fine)");
@@ -1040,8 +1115,13 @@ const SPARouter = (() => {
 
     PageProgress.start();
 
+    const currentPageId = PageRuntime.getPageIdFromUrl(window.location.href);
     const targetPageId = PageRuntime.getPageIdFromUrl(targetRouteKey);
     const currentToken = ++navigationToken;
+
+    if (currentPageId === "blog" && targetPageId === "post") {
+      rememberBlogReturnUrl(window.location.href);
+    }
 
     activeNavigationController?.abort();
     activeNavigationController = new AbortController();

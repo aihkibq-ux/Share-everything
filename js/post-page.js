@@ -169,10 +169,14 @@
       cleanupBackHandler();
       backClickHandler = (event) => {
         event.preventDefault();
+        const blogIndexUrl =
+          typeof siteUtils.getPreferredBlogReturnUrl === "function"
+            ? siteUtils.getPreferredBlogReturnUrl()
+            : new URL("/blog.html", window.location.origin).href;
         if (window.SPARouter?.navigate) {
-          window.SPARouter.navigate("blog.html");
+          window.SPARouter.navigate(blogIndexUrl);
         } else {
-          window.location.href = "blog.html";
+          window.location.href = blogIndexUrl;
         }
       };
       postBack.addEventListener("click", backClickHandler);

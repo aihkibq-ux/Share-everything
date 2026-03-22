@@ -266,6 +266,9 @@
 
       const qs = nextParams.toString();
       history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+      if (typeof siteUtils.rememberBlogReturnUrl === "function") {
+        siteUtils.rememberBlogReturnUrl(window.location.href);
+      }
     }
 
     function saveHistory() {
@@ -542,6 +545,9 @@
     updatePageUI();
     renderFilters();
     searchInput.value = currentSearch;
+    if (typeof siteUtils.rememberBlogReturnUrl === "function") {
+      siteUtils.rememberBlogReturnUrl(window.location.href);
+    }
 
     filtersEl.addEventListener("click", handleFilterClick);
     searchInput.addEventListener("input", handleSearchInput);

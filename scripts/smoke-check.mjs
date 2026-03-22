@@ -49,6 +49,8 @@ expectIncludes(indexHtml, 'property="og:image"', "index.html should declare og:i
 expectIncludes(blogHtml, 'property="og:image"', "blog.html should declare og:image");
 expectIncludes(postHtml, 'property="og:image"', "post.html should declare og:image");
 expectIncludes(postHtml, 'rel="canonical"', "post.html should declare a fallback canonical link");
+expectIncludes(postHtml, 'href="/blog.html"', "post.html should use root-relative blog links for canonical post routes");
+expectIncludes(postHtml, 'src="/js/post-page.js"', "post.html should use root-relative scripts for canonical post routes");
 expectIncludes(indexHtml, "data-page-focus", "index.html should mark a focus target");
 expectIncludes(blogHtml, "data-page-focus", "blog.html should mark a focus target");
 expectIncludes(blogHtml, 'id="blogStatus"', "blog.html should include the live status region");
@@ -60,8 +62,11 @@ expectIncludes(commonJs, "focusSpaContent", "common.js should expose SPA focus m
 expectIncludes(commonJs, "hasFreshPrefetch", "common.js should expire stale prefetched routes");
 expectIncludes(commonJs, "resolveShareImageUrl", "common.js should normalize stable share images");
 expectIncludes(commonJs, "getPostIdFromUrl", "common.js should expose canonical post URL helpers");
+expectIncludes(commonJs, "getPreferredBlogReturnUrl", "common.js should expose a preferred blog return helper");
+expectIncludes(commonJs, "rememberBlogReturnUrl", "common.js should persist the last blog listing route");
 expectIncludes(blogPageJs, 'class="blog-card-link"', "blog cards should render a dedicated link layer");
 expectIncludes(blogPageJs, 'siteUtils.buildPostPath', "blog cards should link to canonical /posts/:id routes");
+expectIncludes(blogPageJs, "siteUtils.rememberBlogReturnUrl", "blog page should persist the current listing URL");
 expectIncludes(blogPageJs, 'data-post-tags="${serializedTags}"', "blog cards should serialize tags for bookmark fallback");
 expectIncludes(blogPageJs, 'aria-pressed="${bookmarked ? "true" : "false"}"', "bookmark buttons should expose pressed state");
 expectIncludes(blogPageJs, "announceStatus(", "blog page should announce result updates");
@@ -74,8 +79,10 @@ expectIncludes(bookmarkJs, "hydrateMissingMetadata", "bookmark manager should hy
 expectIncludes(notionApiJs, "collectManagedCacheEntries", "notion cache should evict older entries on quota pressure");
 expectIncludes(indexPageJs, "function navigateTo(url)", "index page should provide a navigation fallback helper");
 expectIncludes(indexPageJs, "window.location.href = url", "index page should fall back to full navigation");
+expectIncludes(indexPageJs, 'navigateTo("/blog.html"', "index page navigation should use root-relative paths");
 expectIncludes(postPageJs, 'window.StructuredData?.set?.("post-article"', "post page should publish article structured data");
 expectIncludes(postPageJs, "initialPostData", "post page should reuse server-rendered post payloads");
+expectIncludes(postPageJs, "siteUtils.getPreferredBlogReturnUrl", "post page back navigation should restore the preferred blog listing route");
 expectIncludes(apiPostJs, 'upsertStructuredDataScript(html, "post-article"', "article HTML route should emit structured data");
 expectIncludes(apiPostJs, 'id="initialPostData"', "article HTML route should emit initial post data");
 expectIncludes(apiSitemapJs, "buildPostUrl", "dynamic sitemap should include article routes");

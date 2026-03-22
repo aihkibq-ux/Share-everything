@@ -21,7 +21,7 @@
     function executeSearch() {
       const query = searchInput.value.trim();
       if (query) {
-        navigateTo(`blog.html?search=${encodeURIComponent(query)}`);
+        navigateTo(`/blog.html?search=${encodeURIComponent(query)}`);
       }
     }
 
@@ -32,15 +32,15 @@
     }
 
     function handleHomeClick() {
-      navigateTo("blog.html");
+      navigateTo("/blog.html");
     }
 
     function handleStartClick() {
-      navigateTo("blog.html?category=精选");
+      navigateTo("/blog.html?category=精选");
     }
 
     function handleWikiClick() {
-      navigateTo("blog.html?category=收藏");
+      navigateTo("/blog.html?category=收藏");
     }
 
     searchInput.addEventListener("keydown", handleSearchKeyDown);
