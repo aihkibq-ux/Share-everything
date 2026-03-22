@@ -42,5 +42,9 @@
     initDeferredFonts();
   }
 
-  window.addEventListener("pageshow", initDeferredFonts);
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) {
+      initDeferredFonts();
+    }
+  });
 })();

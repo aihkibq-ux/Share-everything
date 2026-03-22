@@ -132,15 +132,24 @@
         titleEl.textContent = currentCategory === "全部" ? "总览" : currentCategory;
       }
 
-      document.title = `${currentCategory === "全部" ? "总览" : currentCategory} — Share Everything`;
+      const title = `${currentCategory === "全部" ? "总览" : currentCategory} — Share Everything`;
       const description = currentSearch
         ? `搜索“${currentSearch}”的相关文章`
         : currentCategory === "全部"
           ? "探索所有文章，按分类浏览，搜索你感兴趣的内容。"
           : `浏览「${currentCategory}」分类下的文章`;
-      const metaDescription = document.querySelector('meta[name="description"]');
-      if (metaDescription) {
-        metaDescription.content = description;
+      if (typeof window.updateSeoMeta === "function") {
+        window.updateSeoMeta({
+          title,
+          description,
+          url: window.location.href,
+        });
+      } else {
+        document.title = title;
+        const metaDescription = document.querySelector('meta[name="description"]');
+        if (metaDescription) {
+          metaDescription.content = description;
+        }
       }
 
       const topActions = document.querySelectorAll(".top-actions .action-btn");

@@ -13,6 +13,26 @@ const NotionAPI = (() => {
   const POST_SUMMARY_CACHE_PREFIX = "notion_post_summary_";
   const SAFE_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
   const SAFE_IMAGE_PROTOCOLS = new Set(["http:", "https:"]);
+  const NOTION_ANNOTATION_STYLES = {
+    gray: "color: #9b9a97;",
+    brown: "color: #937264;",
+    orange: "color: #ffa344;",
+    yellow: "color: #ffd43b;",
+    green: "color: #4caf50;",
+    blue: "color: #4dabf7;",
+    purple: "color: #c77dff;",
+    pink: "color: #ff7aa2;",
+    red: "color: #ff6b6b;",
+    gray_background: "background: rgba(155, 154, 151, 0.16); color: var(--text-primary); border-radius: 0.2em; padding: 0 0.2em;",
+    brown_background: "background: rgba(147, 114, 100, 0.18); color: var(--text-primary); border-radius: 0.2em; padding: 0 0.2em;",
+    orange_background: "background: rgba(255, 163, 68, 0.18); color: var(--text-primary); border-radius: 0.2em; padding: 0 0.2em;",
+    yellow_background: "background: rgba(255, 212, 59, 0.18); color: var(--text-primary); border-radius: 0.2em; padding: 0 0.2em;",
+    green_background: "background: rgba(76, 175, 80, 0.18); color: var(--text-primary); border-radius: 0.2em; padding: 0 0.2em;",
+    blue_background: "background: rgba(77, 171, 247, 0.18); color: var(--text-primary); border-radius: 0.2em; padding: 0 0.2em;",
+    purple_background: "background: rgba(199, 125, 255, 0.18); color: var(--text-primary); border-radius: 0.2em; padding: 0 0.2em;",
+    pink_background: "background: rgba(255, 122, 162, 0.18); color: var(--text-primary); border-radius: 0.2em; padding: 0 0.2em;",
+    red_background: "background: rgba(255, 107, 107, 0.18); color: var(--text-primary); border-radius: 0.2em; padding: 0 0.2em;",
+  };
 
   // ====== 分类固定列表（Notion 不提供动态获取接口） ======
   const CATEGORIES = [
@@ -407,6 +427,10 @@ const NotionAPI = (() => {
       if (ann.bold)          text = `<strong>${text}</strong>`;
       if (ann.italic)        text = `<em>${text}</em>`;
       if (ann.strikethrough) text = `<del>${text}</del>`;
+      if (ann.underline)     text = `<u>${text}</u>`;
+      if (ann.color && NOTION_ANNOTATION_STYLES[ann.color]) {
+        text = `<span style="${NOTION_ANNOTATION_STYLES[ann.color]}">${text}</span>`;
+      }
       const safeHref = sanitizeUrl(t.href, SAFE_LINK_PROTOCOLS);
       if (safeHref)          text = `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener">${text}</a>`;
       return text;

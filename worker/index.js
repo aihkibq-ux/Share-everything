@@ -136,6 +136,7 @@ function corsHeaders(responseOrigin) {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
   };
   if (responseOrigin) {
     headers["Access-Control-Allow-Origin"] = responseOrigin;
@@ -173,6 +174,10 @@ function parseOriginHeader(value) {
 }
 
 function getResponseOrigin(requestOrigin, allowedOrigins) {
+  if (allowedOrigins.includes("*")) {
+    return "*";
+  }
+
   const parsedOrigin = parseOriginHeader(requestOrigin);
   if (parsedOrigin && allowedOrigins.includes(parsedOrigin)) {
     return parsedOrigin;
@@ -181,6 +186,10 @@ function getResponseOrigin(requestOrigin, allowedOrigins) {
 }
 
 function isAllowedRequestSource(request, allowedOrigins) {
+  if (allowedOrigins.includes("*")) {
+    return true;
+  }
+
   const requestOrigin = parseOriginHeader(request.headers.get("Origin"));
   if (requestOrigin) {
     return allowedOrigins.includes(requestOrigin);

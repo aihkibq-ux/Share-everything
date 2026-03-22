@@ -376,6 +376,54 @@ function initBlogCardReveal() {
 // Expose for use in page scripts
 window.initBlogCardReveal = initBlogCardReveal;
 
+function ensureMetaTag(selector, attributes) {
+  let meta = document.head?.querySelector(selector);
+  if (!meta) {
+    meta = document.createElement("meta");
+    Object.entries(attributes).forEach(([key, value]) => {
+      meta.setAttribute(key, value);
+    });
+    document.head?.appendChild(meta);
+  }
+  return meta;
+}
+
+function updateSeoMeta({
+  title,
+  description,
+  url = window.location.href,
+  ogTitle = title,
+  ogDescription = description,
+} = {}) {
+  if (typeof title === "string" && title) {
+    document.title = title;
+  }
+
+  if (typeof description === "string") {
+    ensureMetaTag('meta[name="description"]', {
+      name: "description",
+    }).content = description;
+  }
+
+  if (typeof ogTitle === "string" && ogTitle) {
+    ensureMetaTag('meta[property="og:title"]', {
+      property: "og:title",
+    }).content = ogTitle;
+  }
+
+  if (typeof ogDescription === "string") {
+    ensureMetaTag('meta[property="og:description"]', {
+      property: "og:description",
+    }).content = ogDescription;
+  }
+
+  ensureMetaTag('meta[property="og:url"]', {
+    property: "og:url",
+  }).content = new URL(url, window.location.href).href;
+}
+
+window.updateSeoMeta = updateSeoMeta;
+
 /* ===== 清除文字选区（防止蓝框残留）===== */
 document.addEventListener("mousedown", (e) => {
   if (!(e.target instanceof Element)) return;
@@ -613,10 +661,18 @@ const SPARouter = (() => {
       }
 
       // 更新标题和描述
-      document.title = doc.title || "Share Everything";
-      const nd = doc.querySelector('meta[name="description"]');
-      const cd = document.querySelector('meta[name="description"]');
-      if (nd && cd) cd.content = nd.content;
+      const nextTitle = doc.title || "Share Everything";
+      const nextDescription = doc.querySelector('meta[name="description"]')?.content || "";
+      const nextOgTitle = doc.querySelector('meta[property="og:title"]')?.content || nextTitle;
+      const nextOgDescription =
+        doc.querySelector('meta[property="og:description"]')?.content || nextDescription;
+      updateSeoMeta({
+        title: nextTitle,
+        description: nextDescription,
+        url: targetUrl.href,
+        ogTitle: nextOgTitle,
+        ogDescription: nextOgDescription,
+      });
 
       // ⑤ 替换内容
       content.innerHTML = newContent.innerHTML;
@@ -697,7 +753,6 @@ const SPARouter = (() => {
       warmPage(link.href);
     }
     // Notion 数据预加载
-    const card = target.closest("a.blog-card");
     const hoveredCard = target.closest("a.blog-card");
     if (hoveredCard && hoveredCard.href) {
       warmPostDetail(hoveredCard);

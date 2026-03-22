@@ -224,10 +224,20 @@
           return;
         }
 
-        document.title = `${post.title} — Share Everything`;
-        const metaDescription = document.querySelector('meta[name="description"]');
-        if (metaDescription) {
-          metaDescription.content = post.excerpt || post.title;
+        const title = `${post.title} — Share Everything`;
+        const description = post.excerpt || post.title;
+        if (typeof window.updateSeoMeta === "function") {
+          window.updateSeoMeta({
+            title,
+            description,
+            url: window.location.href,
+          });
+        } else {
+          document.title = title;
+          const metaDescription = document.querySelector('meta[name="description"]');
+          if (metaDescription) {
+            metaDescription.content = description;
+          }
         }
 
         const catColor = notionApi.getCategoryColor(post.category);
