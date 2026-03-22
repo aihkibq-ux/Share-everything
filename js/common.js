@@ -27,14 +27,14 @@ function getParticleCount() {
   const area = viewportWidth * viewportHeight;
 
   if (viewportWidth < 768) {
-    return Math.min(170, Math.max(90, Math.round(area / 3800)));
+    return Math.min(140, Math.max(90, Math.round(area / 5200)));
   }
 
   if (viewportWidth < 1600) {
-    return Math.min(430, Math.max(280, Math.round(area / 3900)));
+    return Math.min(320, Math.max(220, Math.round(area / 5200)));
   }
 
-  return Math.min(680, Math.max(430, Math.round(area / 3600)));
+  return Math.min(420, Math.max(320, Math.round(area / 5000)));
 }
 
 let particleCount = getParticleCount();
@@ -108,8 +108,8 @@ class Particle {
     const parallaxY = mouseY * (1000 / this.z) * 0.2;
     out.px = (this.x - width / 2) * perspective + width / 2 + parallaxX;
     out.py = (this.y - height / 2) * perspective + height / 2 + parallaxY;
-    out.pSize = Math.max(0.5, this.size * perspective * 2.25);
-    out.opacity = Math.min(1, Math.max(0, 1.05 - this.z / 1600));
+    out.pSize = Math.max(0.35, this.size * perspective * 1.9);
+    out.opacity = Math.min(1, Math.max(0, 1 - this.z / 1500));
     out.color = this.color;
     return out;
   }
@@ -177,7 +177,6 @@ function drawParticlesFrame(advance = true) {
     bucketArrays[c][bucketCounts[c]++] = d;
   }
 
-  ctx.globalCompositeOperation = "screen";
   for (let i = 0; i < bucketKeys.length; i++) {
     const color = bucketKeys[i];
     const count = bucketCounts[color];
@@ -192,7 +191,6 @@ function drawParticlesFrame(advance = true) {
       ctx.fillRect(d.px - d.pSize, d.py - d.pSize, s, s);
     }
   }
-  ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
 }
 

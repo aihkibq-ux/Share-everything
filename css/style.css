@@ -155,8 +155,7 @@ body {
   height: 100vh;
   z-index: 1;
   pointer-events: none;
-  opacity: 0.92;
-  mix-blend-mode: screen;
+  opacity: 0.8;
 }
 
 /* ===== Cursor Follow Glow ===== */
@@ -2022,6 +2021,6 @@ body {
   }
 
   #particles-canvas {
-    opacity: 0.45;
+    opacity: 0.3;
   }
 }
