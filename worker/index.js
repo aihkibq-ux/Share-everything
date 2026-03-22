@@ -11,28 +11,44 @@
  */
 
 const CACHE_TTL = 300; // 边缘缓存 5 分钟
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://www.0000068.xyz",
+  "https://0000068.xyz",
+];
+const NOTION_ID_PATTERN = /^[0-9a-fA-F-]{32,36}$/;
+const BLOCK_CHILDREN_QUERY_PARAMS = new Set(["page_size", "start_cursor"]);
 
 export default {
   async fetch(request, env, ctx) {
-    const origin = request.headers.get("Origin") || "";
-    const allowed = env.ALLOWED_ORIGIN || "*";
+    const allowedOrigins = getAllowedOrigins(env);
+    const responseOrigin = getResponseOrigin(request.headers.get("Origin"), allowedOrigins);
 
     // CORS Preflight
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders(allowed, origin) });
+      if (!isAllowedRequestSource(request, allowedOrigins)) {
+        return jsonResponse({ error: "Forbidden request source" }, 403, responseOrigin);
+      }
+      return new Response(null, { headers: corsHeaders(responseOrigin) });
     }
 
-    // 来源校验：限制非法跨域调用
-    if (allowed !== "*" && origin && origin !== allowed) {
-      return new Response("Forbidden", { status: 403 });
+    if (!isAllowedRequestSource(request, allowedOrigins)) {
+      return jsonResponse({ error: "Forbidden request source" }, 403, responseOrigin);
     }
 
     const url = new URL(request.url);
-    const path = url.pathname;
+    const pathInfo = getAllowedPathInfo(url.pathname);
 
-    // 仅代理 Notion API 路径
-    if (!path.startsWith("/v1/")) {
-      return new Response("Not found", { status: 404 });
+    if (!pathInfo) {
+      return jsonResponse({ error: "Unsupported Notion API path" }, 400, responseOrigin);
+    }
+
+    if (!isAllowedMethodForPath(request.method, pathInfo.kind)) {
+      return jsonResponse({ error: "Method not allowed for this path" }, 405, responseOrigin);
+    }
+
+    const queryString = buildAllowedQueryString(url.searchParams, pathInfo.kind);
+    if (queryString == null) {
+      return jsonResponse({ error: "Unsupported query parameters" }, 400, responseOrigin);
     }
 
     // ====== 边缘缓存 ======
@@ -40,6 +56,8 @@ export default {
 
     // 构造缓存 key：避免把原始 body 直接拼进 URL
     const cacheUrl = new URL(request.url);
+    cacheUrl.pathname = `/v1/${pathInfo.notionPath}`;
+    cacheUrl.search = queryString;
     if (body) {
       cacheUrl.searchParams.set("_b", await sha256(body));
     }
@@ -52,7 +70,7 @@ export default {
       return new Response(cached.body, {
         status: cached.status,
         headers: {
-          ...corsHeaders(allowed, origin),
+          ...corsHeaders(responseOrigin),
           "Content-Type": "application/json",
           "Cache-Control": `public, max-age=${CACHE_TTL}`,
           "X-Cache": "HIT",
@@ -61,7 +79,7 @@ export default {
     }
 
     // ====== 回源 Notion API ======
-    const notionUrl = "https://api.notion.com" + path + url.search;
+    const notionUrl = `https://api.notion.com/v1/${pathInfo.notionPath}${queryString}`;
 
     try {
       const notionRes = await fetch(notionUrl, {
@@ -91,7 +109,7 @@ export default {
       return new Response(data, {
         status: notionRes.status,
         headers: {
-          ...corsHeaders(allowed, origin),
+          ...corsHeaders(responseOrigin),
           "Content-Type": "application/json",
           "Cache-Control": notionRes.ok ? `public, max-age=${CACHE_TTL}` : "no-store",
           "X-Cache": "MISS",
@@ -101,7 +119,7 @@ export default {
       return new Response(JSON.stringify({ error: err.message }), {
         status: 502,
         headers: {
-          ...corsHeaders(allowed, origin),
+          ...corsHeaders(responseOrigin),
           "Content-Type": "application/json",
           "Cache-Control": "no-store",
         },
@@ -112,16 +130,149 @@ export default {
 
 /**
  * CORS 响应头
- * @param {string} allowed - 环境变量配置的允许域名，"*" 或具体域名
- * @param {string} origin  - 请求的 Origin 头
  */
-function corsHeaders(allowed, origin) {
-  return {
-    "Access-Control-Allow-Origin": allowed === "*" ? "*" : origin,
+function corsHeaders(responseOrigin) {
+  const headers = {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Max-Age": "86400",
   };
+  if (responseOrigin) {
+    headers["Access-Control-Allow-Origin"] = responseOrigin;
+  }
+  return headers;
+}
+
+function jsonResponse(data, status, responseOrigin) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...corsHeaders(responseOrigin),
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+function getAllowedOrigins(env) {
+  const configured = (env.ALLOWED_ORIGINS || env.ALLOWED_ORIGIN || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return configured.length > 0 ? configured : DEFAULT_ALLOWED_ORIGINS;
+}
+
+function parseOriginHeader(value) {
+  if (!value) return "";
+  try {
+    return new URL(value).origin;
+  } catch (error) {
+    return "";
+  }
+}
+
+function getResponseOrigin(requestOrigin, allowedOrigins) {
+  const parsedOrigin = parseOriginHeader(requestOrigin);
+  if (parsedOrigin && allowedOrigins.includes(parsedOrigin)) {
+    return parsedOrigin;
+  }
+  return "";
+}
+
+function isAllowedRequestSource(request, allowedOrigins) {
+  const requestOrigin = parseOriginHeader(request.headers.get("Origin"));
+  if (requestOrigin) {
+    return allowedOrigins.includes(requestOrigin);
+  }
+
+  const refererOrigin = parseOriginHeader(request.headers.get("Referer"));
+  if (refererOrigin) {
+    return allowedOrigins.includes(refererOrigin);
+  }
+
+  const fetchSite = request.headers.get("Sec-Fetch-Site");
+  return fetchSite === "same-origin" || fetchSite === "same-site";
+}
+
+function normalizePathSegments(pathname) {
+  const rawSegments = pathname.split("/").filter(Boolean);
+  if (rawSegments[0] === "v1") rawSegments.shift();
+  if (rawSegments.length === 0) return null;
+
+  const segments = [];
+  for (const rawSegment of rawSegments) {
+    let decodedSegment;
+    try {
+      decodedSegment = decodeURIComponent(rawSegment);
+    } catch (error) {
+      return null;
+    }
+
+    if (
+      !decodedSegment ||
+      decodedSegment === "." ||
+      decodedSegment === ".." ||
+      decodedSegment.includes("/") ||
+      decodedSegment.includes("\\")
+    ) {
+      return null;
+    }
+
+    segments.push(decodedSegment);
+  }
+
+  return segments.length > 0 ? segments : null;
+}
+
+function getAllowedPathInfo(pathname) {
+  const segments = normalizePathSegments(pathname);
+  if (!segments) return null;
+
+  if (
+    segments[0] === "databases" &&
+    segments[2] === "query" &&
+    segments.length === 3 &&
+    NOTION_ID_PATTERN.test(segments[1])
+  ) {
+    return { kind: "databaseQuery", notionPath: segments.join("/") };
+  }
+
+  if (segments[0] === "pages" && segments.length === 2 && NOTION_ID_PATTERN.test(segments[1])) {
+    return { kind: "page", notionPath: segments.join("/") };
+  }
+
+  if (
+    segments[0] === "blocks" &&
+    segments[2] === "children" &&
+    segments.length === 3 &&
+    NOTION_ID_PATTERN.test(segments[1])
+  ) {
+    return { kind: "blockChildren", notionPath: segments.join("/") };
+  }
+
+  return null;
+}
+
+function isAllowedMethodForPath(method, pathKind) {
+  if (method === "POST" && pathKind === "databaseQuery") return true;
+  if ((method === "GET" || method === "HEAD") && (pathKind === "page" || pathKind === "blockChildren")) {
+    return true;
+  }
+  return false;
+}
+
+function buildAllowedQueryString(searchParams, pathKind) {
+  const allowedParams = pathKind === "blockChildren" ? BLOCK_CHILDREN_QUERY_PARAMS : null;
+  const params = new URLSearchParams();
+
+  for (const [key, value] of searchParams.entries()) {
+    if (!allowedParams?.has(key)) return null;
+    params.append(key, value);
+  }
+
+  const queryString = params.toString();
+  return queryString ? `?${queryString}` : "";
 }
 
 async function sha256(message) {

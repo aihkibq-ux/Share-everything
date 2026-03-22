@@ -156,7 +156,6 @@ body {
   z-index: 1;
   pointer-events: auto;
   opacity: 0.8;
-  will-change: transform;
 }
 
 /* ===== Cursor Follow Glow ===== */
@@ -1179,6 +1178,103 @@ body {
   margin: 48px 0;
 }
 
+.post-callout {
+  display: flex;
+  gap: 14px;
+  margin: 28px 0;
+  padding: 18px 20px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg);
+}
+
+.post-callout-icon {
+  flex: 0 0 auto;
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+
+.post-callout-body {
+  min-width: 0;
+}
+
+.post-callout-body > :last-child {
+  margin-bottom: 0;
+}
+
+.post-toggle {
+  margin: 24px 0;
+  padding: 16px 18px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.post-toggle > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.post-toggle > summary::-webkit-details-marker {
+  color: var(--accent-cyan);
+}
+
+.post-toggle[open] > summary {
+  margin-bottom: 14px;
+}
+
+.post-todo {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin: 18px 0;
+}
+
+.post-todo-box {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 229, 255, 0.35);
+  color: var(--accent-cyan);
+  background: rgba(0, 229, 255, 0.08);
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.post-todo-content {
+  min-width: 0;
+}
+
+.post-todo-text {
+  margin-bottom: 0;
+}
+
+.post-todo-content > :last-child {
+  margin-bottom: 0;
+}
+
+.post-todo.checked .post-todo-content {
+  color: var(--text-secondary);
+}
+
+.post-todo.checked .post-todo-text {
+  text-decoration: line-through;
+}
+
+.post-child-page {
+  margin: 20px 0;
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.03);
+  font-weight: 600;
+}
+
 /* ===== Empty State ===== */
 .empty-state {
   display: flex;
@@ -1904,5 +2000,27 @@ body {
   .fab-bookmark {
     bottom: calc(16px + env(safe-area-inset-bottom));
     right: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .glow-orb {
+    filter: blur(72px);
+    opacity: 0.8;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glow-orb {
+    animation: none;
+    filter: blur(48px);
+  }
+
+  .cursor-glow {
+    display: none;
+  }
+
+  #particles-canvas {
+    opacity: 0;
   }
 }

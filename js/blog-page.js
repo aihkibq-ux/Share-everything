@@ -34,7 +34,7 @@
     const params = new URLSearchParams(window.location.search);
     if (params.get("category")) currentCategory = params.get("category");
     if (params.get("search")) currentSearch = params.get("search");
-    if (params.get("page")) currentPage = parseInt(params.get("page"), 10) || 1;
+    if (params.get("page")) currentPage = Math.max(1, parseInt(params.get("page"), 10) || 1);
 
     const categories = notionApi.getCategories();
     const pageSize = notionApi.getPageSize?.() || 9;
@@ -163,16 +163,20 @@
       const esc = notionApi.escapeHtml;
       const catColor = notionApi.getCategoryColor(post.category);
       const bookmarked = bookmarkManager.isBookmarked(post.id);
+      const defaultCoverGradient = "linear-gradient(135deg, #1a1a2e, #16213e)";
 
       const safeTitle = esc(post.title);
       const safeExcerpt = esc(post.excerpt);
       const safeCategory = esc(post.category);
-      const coverHtml = post.coverImage
+      const safeCoverEmoji = esc(post.coverEmoji || "📝");
+      const safeCoverGradient = sanitizeCoverBackground(post.coverGradient, defaultCoverGradient);
+      const safeCoverImage = sanitizeImageUrl(post.coverImage);
+      const coverHtml = safeCoverImage
         ? `<div class="blog-card-cover-placeholder blog-card-cover-img">
-             <img src="${esc(post.coverImage)}" alt="${safeTitle}" loading="lazy">
+             <img src="${esc(safeCoverImage)}" alt="${safeTitle}" loading="lazy">
            </div>`
-        : `<div class="blog-card-cover-placeholder" style="background: ${post.coverGradient || "linear-gradient(135deg, #1a1a2e, #16213e)"}">
-             <span>${post.coverEmoji || "📝"}</span>
+        : `<div class="blog-card-cover-placeholder" style="background: ${safeCoverGradient}">
+             <span>${safeCoverEmoji}</span>
            </div>`;
 
       return `
@@ -210,6 +214,27 @@
       `;
     }
 
+    function sanitizeImageUrl(candidate) {
+      if (!candidate || typeof candidate !== "string") return null;
+
+      try {
+        const parsed = new URL(candidate, window.location.origin);
+        return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function sanitizeCoverBackground(value, fallback) {
+      if (typeof value !== "string") return fallback;
+
+      const trimmed = value.trim();
+      const isGradient = /^(linear-gradient|radial-gradient)\([#(),.%\sa-zA-Z0-9+-]+\)$/.test(trimmed);
+      if (!trimmed || !isGradient) return fallback;
+      if (trimmed.includes(";") || /url\s*\(/i.test(trimmed)) return fallback;
+      return trimmed;
+    }
+
     function renderPagination(data) {
       if (data.totalPages <= 1) {
         paginationEl.innerHTML = "";
@@ -243,7 +268,7 @@
 
           const total = bookmarks.length;
           const totalPages = Math.max(1, Math.ceil(total / pageSize));
-          const safePage = Math.min(currentPage, totalPages);
+          const safePage = Math.max(1, Math.min(currentPage, totalPages));
           const start = (safePage - 1) * pageSize;
           data = {
             results: bookmarks.slice(start, start + pageSize),
@@ -260,6 +285,10 @@
         }
 
         if (currentToken !== renderToken) return;
+        if (currentPage !== data.currentPage) {
+          currentPage = data.currentPage;
+          updateURL();
+        }
 
         if (data.results.length === 0) {
           showEmptyState();

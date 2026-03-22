@@ -11,6 +11,8 @@ const NotionAPI = (() => {
   };
   const REQUEST_TIMEOUT = 12000;
   const POST_SUMMARY_CACHE_PREFIX = "notion_post_summary_";
+  const SAFE_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
+  const SAFE_IMAGE_PROTOCOLS = new Set(["http:", "https:"]);
 
   // ====== 分类固定列表（Notion 不提供动态获取接口） ======
   const CATEGORIES = [
@@ -27,6 +29,7 @@ const NotionAPI = (() => {
   const STALE_TTL = 1000 * 60 * 5;  // 5 分钟后视为 stale，后台刷新
   const pendingRequests = new Map();
   const postSummaryMemoryCache = new Map();
+  const postSummaryTimestampCache = new Map();
 
   function getCache(key) {
     try {
@@ -36,9 +39,9 @@ const NotionAPI = (() => {
     } catch (e) { return null; }
   }
 
-  function setCache(key, data) {
+  function setCache(key, data, timestamp = Date.now()) {
     try {
-      sessionStorage.setItem(key, JSON.stringify({ timestamp: Date.now(), data }));
+      sessionStorage.setItem(key, JSON.stringify({ timestamp, data }));
     } catch (e) {}
   }
 
@@ -64,39 +67,54 @@ const NotionAPI = (() => {
     };
   }
 
-  function storePostSummary(post) {
+  function storePostSummary(post, timestamp = Date.now()) {
     const summary = normalizePostSummary(post);
     if (!summary) return null;
 
     postSummaryMemoryCache.set(summary.id, summary);
-    setCache(getPostSummaryCacheKey(summary.id), summary);
+    postSummaryTimestampCache.set(summary.id, timestamp);
+    setCache(getPostSummaryCacheKey(summary.id), summary, timestamp);
     return summary;
   }
 
-  function primePostSummaries(posts) {
+  function primePostSummaries(posts, timestamp) {
     (posts || []).forEach((post) => {
-      storePostSummary(post);
+      storePostSummary(post, timestamp);
     });
   }
 
-  function getPostSummary(pageId) {
+  function getPostSummarySnapshot(pageId) {
     if (!pageId) return null;
 
-    if (postSummaryMemoryCache.has(pageId)) {
-      return postSummaryMemoryCache.get(pageId);
+    if (postSummaryMemoryCache.has(pageId) && postSummaryTimestampCache.has(pageId)) {
+      const summary = postSummaryMemoryCache.get(pageId);
+      const timestamp = postSummaryTimestampCache.get(pageId);
+      return {
+        summary,
+        timestamp,
+        age: Date.now() - timestamp,
+      };
     }
 
     const cached = getCache(getPostSummaryCacheKey(pageId));
     if (!cached) return null;
 
-    const age = Date.now() - cached.timestamp;
-    if (age >= CACHE_TTL) return null;
-
     const summary = normalizePostSummary(cached.data);
     if (!summary) return null;
 
     postSummaryMemoryCache.set(pageId, summary);
-    return summary;
+    postSummaryTimestampCache.set(pageId, cached.timestamp);
+    return {
+      summary,
+      timestamp: cached.timestamp,
+      age: Date.now() - cached.timestamp,
+    };
+  }
+
+  function getPostSummary(pageId, maxAge = CACHE_TTL) {
+    const snapshot = getPostSummarySnapshot(pageId);
+    if (!snapshot || snapshot.age >= maxAge) return null;
+    return snapshot.summary;
   }
 
   function withPendingRequest(key, loader) {
@@ -124,7 +142,7 @@ const NotionAPI = (() => {
     if (cached) {
       const age = Date.now() - cached.timestamp;
       if (age < CACHE_TTL) {
-        primePostSummaries(cached.data);
+        primePostSummaries(cached.data, cached.timestamp);
         // 缓存未硬过期
         if (age > STALE_TTL) {
           // stale: 先返回旧数据，后台静默刷新
@@ -232,7 +250,7 @@ const NotionAPI = (() => {
     if (cached) {
       const age = Date.now() - cached.timestamp;
       if (age < CACHE_TTL) {
-        storePostSummary(cached.data);
+        storePostSummary(cached.data, cached.timestamp);
         if (age > STALE_TTL) {
           // stale: 后台静默刷新
           fetchPageRemote(pageId, cacheKey).catch(() => {});
@@ -258,13 +276,19 @@ const NotionAPI = (() => {
           startCursor = data.has_more ? data.next_cursor : null;
         } while (startCursor);
 
+        for (const block of blocks) {
+          if (block?.has_children) {
+            block.children = await fetchAllBlockChildren(block.id);
+          }
+        }
+
         return blocks;
       }
 
-      const cachedSummary = getPostSummary(pageId);
+      const summarySnapshot = getPostSummarySnapshot(pageId);
       const blocksPromise = fetchAllBlockChildren(pageId);
 
-      let summary = cachedSummary;
+      let summary = summarySnapshot?.age < STALE_TTL ? summarySnapshot.summary : null;
       let blocksRes;
 
       if (summary) {
@@ -296,21 +320,25 @@ const NotionAPI = (() => {
     const cover = page.cover;
     const coverImage =
       cover?.external?.url || cover?.file?.url || null;
+    const title = richTextToPlain(props.Name?.title) || "Untitled";
+    const excerpt = richTextToPlain(props.Excerpt?.rich_text);
+    const readTime = richTextToPlain(props.ReadTime?.rich_text);
+    const tags = props.Tags?.multi_select?.map((t) => t.name) || [];
     return {
       id: page.id,
-      title: props.Name?.title?.[0]?.plain_text || "Untitled",
-      excerpt: props.Excerpt?.rich_text?.[0]?.plain_text || "",
+      title,
+      excerpt,
       category,
       date: props.Date?.date?.start || "",
-      readTime: props.ReadTime?.rich_text?.[0]?.plain_text || "",
+      readTime,
       coverImage,
       coverEmoji: page.icon?.emoji || "📝",
       coverGradient: gradientForCategory(category),
-      tags: props.Tags?.multi_select?.map((t) => t.name) || [],
+      tags,
       _searchText: [
-        props.Name?.title?.[0]?.plain_text || "",
-        props.Excerpt?.rich_text?.[0]?.plain_text || "",
-        ...(props.Tags?.multi_select?.map((t) => t.name) || []),
+        title,
+        excerpt,
+        ...tags,
       ].join(" ").toLowerCase(),
     };
   }
@@ -328,15 +356,34 @@ const NotionAPI = (() => {
 
   function mapNotionBlock(block) {
     const type = block.type;
+    const children = Array.isArray(block.children)
+      ? block.children.map(mapNotionBlock).filter(Boolean)
+      : [];
+    const withChildren = (payload) =>
+      children.length > 0 ? { ...payload, children } : payload;
     const handlers = {
-      paragraph: () => ({ type, text: richTextToHtml(block.paragraph.rich_text) }),
-      heading_1: () => ({ type, text: richTextToHtml(block.heading_1.rich_text) }),
-      heading_2: () => ({ type, text: richTextToHtml(block.heading_2.rich_text) }),
-      heading_3: () => ({ type, text: richTextToHtml(block.heading_3.rich_text) }),
-      bulleted_list_item: () => ({ type, text: richTextToHtml(block.bulleted_list_item.rich_text) }),
-      numbered_list_item: () => ({ type, text: richTextToHtml(block.numbered_list_item.rich_text) }),
+      paragraph: () => withChildren({ type, text: richTextToHtml(block.paragraph.rich_text) }),
+      heading_1: () => withChildren({ type, text: richTextToHtml(block.heading_1.rich_text) }),
+      heading_2: () => withChildren({ type, text: richTextToHtml(block.heading_2.rich_text) }),
+      heading_3: () => withChildren({ type, text: richTextToHtml(block.heading_3.rich_text) }),
+      bulleted_list_item: () => withChildren({ type, text: richTextToHtml(block.bulleted_list_item.rich_text) }),
+      numbered_list_item: () => withChildren({ type, text: richTextToHtml(block.numbered_list_item.rich_text) }),
       code: () => ({ type, language: block.code.language || "", text: richTextToPlain(block.code.rich_text) }),
-      quote: () => ({ type, text: richTextToHtml(block.quote.rich_text) }),
+      quote: () => withChildren({ type, text: richTextToHtml(block.quote.rich_text) }),
+      callout: () => withChildren({
+        type,
+        text: richTextToHtml(block.callout.rich_text),
+        icon: block.callout.icon?.emoji || "",
+      }),
+      toggle: () => withChildren({ type, text: richTextToHtml(block.toggle.rich_text) }),
+      to_do: () => withChildren({
+        type,
+        text: richTextToHtml(block.to_do.rich_text),
+        checked: Boolean(block.to_do.checked),
+      }),
+      bookmark: () => ({ type, url: block.bookmark.url || "" }),
+      child_page: () => ({ type, title: block.child_page?.title || "" }),
+      synced_block: () => ({ type, children }),
       divider: () => ({ type: "divider" }),
       image: () => ({
         type: "image",
@@ -344,7 +391,7 @@ const NotionAPI = (() => {
         caption: richTextToPlain(block.image.caption),
       }),
     };
-    return handlers[type]?.() ?? { type: "unsupported" };
+    return handlers[type]?.() ?? (children.length > 0 ? { type: "container", children } : null);
   }
 
   // ====== 富文本处理 ======
@@ -359,7 +406,8 @@ const NotionAPI = (() => {
       if (ann.bold)          text = `<strong>${text}</strong>`;
       if (ann.italic)        text = `<em>${text}</em>`;
       if (ann.strikethrough) text = `<del>${text}</del>`;
-      if (t.href)            text = `<a href="${escapeHtml(t.href)}" target="_blank" rel="noopener">${text}</a>`;
+      const safeHref = sanitizeUrl(t.href, SAFE_LINK_PROTOCOLS);
+      if (safeHref)          text = `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener">${text}</a>`;
       return text;
     }).join("");
   }
@@ -371,47 +419,83 @@ const NotionAPI = (() => {
 
   // ====== Block → HTML 渲染器 ======
   function renderBlocks(blocks) {
-    let html = "";
-    let listStack = [];
+    if (!Array.isArray(blocks) || blocks.length === 0) return "";
 
+    let html = "";
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
-      const nextBlock = blocks[i + 1];
-      const isBullet = block.type === "bulleted_list_item";
-      const isNumber = block.type === "numbered_list_item";
+      if (!block) continue;
 
-      if (isBullet || isNumber) {
-        const tag = isBullet ? "ul" : "ol";
-        if (!listStack.length || listStack[listStack.length - 1] !== tag) {
-          html += `<${tag}>`;
-          listStack.push(tag);
+      if (block.type === "bulleted_list_item" || block.type === "numbered_list_item") {
+        const tag = block.type === "bulleted_list_item" ? "ul" : "ol";
+        const items = [];
+
+        while (i < blocks.length && blocks[i]?.type === block.type) {
+          items.push(blocks[i]);
+          i += 1;
         }
-        html += `<li>${block.text}</li>`;
-        const nextSameType = nextBlock?.type === block.type;
-        if (!nextSameType) {
-          html += `</${listStack.pop()}>`;
-        }
+
+        i -= 1;
+        html += `<${tag}>${items.map(renderListItem).join("")}</${tag}>`;
         continue;
       }
 
-      // 关闭残留列表
-      while (listStack.length) html += `</${listStack.pop()}>`;
-
-      switch (block.type) {
-        case "heading_1":   html += `<h1>${block.text}</h1>`; break;
-        case "heading_2":   html += `<h2>${block.text}</h2>`; break;
-        case "heading_3":   html += `<h3>${block.text}</h3>`; break;
-        case "paragraph":   html += block.text ? `<p>${block.text}</p>` : ""; break;
-        case "code":        html += `<pre><code class="language-${escapeHtml(block.language)}">${escapeHtml(block.text)}</code></pre>`; break;
-        case "quote":       html += `<blockquote>${block.text}</blockquote>`; break;
-        case "divider":     html += "<hr>"; break;
-        case "image":       html += `<img src="${escapeHtml(block.url)}" alt="${escapeHtml(block.caption)}" loading="lazy">`; break;
-        default: break;
-      }
+      html += renderBlock(block);
     }
 
-    while (listStack.length) html += `</${listStack.pop()}>`;
     return html;
+  }
+
+  function renderListItem(block) {
+    return `<li>${block.text || ""}${renderBlocks(block.children || [])}</li>`;
+  }
+
+  function renderBlock(block) {
+    const childrenHtml = renderBlocks(block.children || []);
+
+    switch (block.type) {
+      case "container":
+      case "synced_block":
+        return childrenHtml;
+      case "heading_1":
+        return `<h1>${block.text || ""}</h1>${childrenHtml}`;
+      case "heading_2":
+        return `<h2>${block.text || ""}</h2>${childrenHtml}`;
+      case "heading_3":
+        return `<h3>${block.text || ""}</h3>${childrenHtml}`;
+      case "paragraph":
+        return block.text ? `<p>${block.text}</p>${childrenHtml}` : childrenHtml;
+      case "code":
+        return `<pre><code class="language-${escapeHtml(block.language)}">${escapeHtml(block.text)}</code></pre>${childrenHtml}`;
+      case "quote":
+        return `<blockquote>${block.text || ""}${childrenHtml}</blockquote>`;
+      case "divider":
+        return `<hr>${childrenHtml}`;
+      case "image": {
+        const safeImageUrl = sanitizeUrl(block.url, SAFE_IMAGE_PROTOCOLS);
+        if (!safeImageUrl) return childrenHtml;
+        return `<img src="${escapeHtml(safeImageUrl)}" alt="${escapeHtml(block.caption)}" loading="lazy">${childrenHtml}`;
+      }
+      case "callout": {
+        const iconHtml = block.icon
+          ? `<div class="post-callout-icon" aria-hidden="true">${escapeHtml(block.icon)}</div>`
+          : "";
+        return `<div class="post-callout">${iconHtml}<div class="post-callout-body">${block.text || ""}${childrenHtml}</div></div>`;
+      }
+      case "toggle":
+        return `<details class="post-toggle"><summary>${block.text || ""}</summary>${childrenHtml}</details>`;
+      case "to_do":
+        return `<div class="post-todo${block.checked ? " checked" : ""}"><span class="post-todo-box" aria-hidden="true">${block.checked ? "&#10003;" : ""}</span><div class="post-todo-content"><div class="post-todo-text">${block.text || ""}</div>${childrenHtml}</div></div>`;
+      case "bookmark": {
+        const safeUrl = sanitizeUrl(block.url, SAFE_LINK_PROTOCOLS);
+        if (!safeUrl) return childrenHtml;
+        return `<p><a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener">${escapeHtml(safeUrl)}</a></p>${childrenHtml}`;
+      }
+      case "child_page":
+        return `<p class="post-child-page">${escapeHtml(block.title || "")}</p>${childrenHtml}`;
+      default:
+        return childrenHtml;
+    }
   }
 
   function escapeHtml(text) {
@@ -422,6 +506,17 @@ const NotionAPI = (() => {
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function sanitizeUrl(candidate, allowedProtocols) {
+    if (!candidate || typeof candidate !== "string") return null;
+
+    try {
+      const parsed = new URL(candidate, window.location.origin);
+      return allowedProtocols.has(parsed.protocol) ? parsed.href : null;
+    } catch (error) {
+      return null;
+    }
   }
 
   // ====== 分类颜色映射 ======
@@ -443,6 +538,7 @@ const NotionAPI = (() => {
     getCategories: () => CATEGORIES,
     queryPosts: (options = {}) => liveQueryDatabase(options),
     getPost: (pageId) => liveGetPage(pageId),
+    getPostSummary,
     renderBlocks,
     escapeHtml,
     getCategoryColor,

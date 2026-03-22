@@ -193,7 +193,10 @@
         }
 
         document.title = `${post.title} — Share Everything`;
-        document.querySelector('meta[name="description"]').content = post.excerpt || post.title;
+        const metaDescription = document.querySelector('meta[name="description"]');
+        if (metaDescription) {
+          metaDescription.content = post.excerpt || post.title;
+        }
 
         const catColor = notionApi.getCategoryColor(post.category);
         const esc = notionApi.escapeHtml;
@@ -222,7 +225,7 @@
                 </svg>
                 ${esc(post.readTime)}
               </span>
-              ${post.tags ? `<span>${post.tags.map((tag) => `#${esc(tag)}`).join(" ")}</span>` : ""}
+              ${Array.isArray(post.tags) && post.tags.length > 0 ? `<span>${post.tags.map((tag) => `#${esc(tag)}`).join(" ")}</span>` : ""}
             </div>
           </div>
           <div class="post-content">

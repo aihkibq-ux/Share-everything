@@ -125,6 +125,14 @@ rebuildParticleBuffers();
 let speedMultiplier = 1;
 let targetSpeedMultiplier = 1;
 let particlesBootstrapped = false;
+const reducedMotionQuery =
+  typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-reduced-motion: reduce)")
+    : null;
+
+function prefersReducedMotion() {
+  return Boolean(reducedMotionQuery?.matches);
+}
 
 function drawParticlesFrame(advance = true) {
   if (!ctx || !width || !height) return;
@@ -139,7 +147,8 @@ function drawParticlesFrame(advance = true) {
   // Reset counters for this frame
   bucketKeys.forEach((c) => (bucketCounts[c] = 0));
 
-  for (let i = 0; i < particleCount; i++) {
+  const activeParticleCount = Math.min(particleCount, particles.length, drawPool.length);
+  for (let i = 0; i < activeParticleCount; i++) {
     if (advance) particles[i].update();
     const d = particles[i].getDrawData(drawPool[i]);
     const c = d.color;
@@ -178,8 +187,17 @@ function clearParticleBootstrapTimer() {
 }
 
 function animateParticles() {
-  if (!ctx) return;
-  drawParticlesFrame(true);
+  if (!ctx || prefersReducedMotion()) return;
+
+  try {
+    drawParticlesFrame(true);
+  } catch (error) {
+    console.error("Particle animation error:", error);
+    stopParticles();
+    particlesBootstrapped = false;
+    return;
+  }
+
   rafId = requestAnimationFrame(animateParticles);
 }
 
@@ -191,6 +209,10 @@ function bootstrapParticles(force = false) {
 
   const hasViewport = resize();
   if (!hasViewport) return false;
+  if (prefersReducedMotion()) {
+    ctx.clearRect(0, 0, width, height);
+    return true;
+  }
 
   if (force || !particlesBootstrapped || particles.length !== particleCount) {
     initParticles();
@@ -273,6 +295,27 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+if (reducedMotionQuery) {
+  const handleReducedMotionChange = () => {
+    if (reducedMotionQuery.matches) {
+      stopParticles();
+      clearParticleBootstrapTimer();
+      if (ctx && width && height) {
+        ctx.clearRect(0, 0, width, height);
+      }
+      return;
+    }
+
+    scheduleParticleBootstrap(true);
+  };
+
+  if (typeof reducedMotionQuery.addEventListener === "function") {
+    reducedMotionQuery.addEventListener("change", handleReducedMotionChange);
+  } else if (typeof reducedMotionQuery.addListener === "function") {
+    reducedMotionQuery.addListener(handleReducedMotionChange);
+  }
+}
+
 /* ===== Cursor Glow, Spotlight & Parallax (merged mousemove) ===== */
 const cursorGlow = document.getElementById("cursorGlow");
 let mouseAF = null;
@@ -326,8 +369,13 @@ window.initBlogCardReveal = initBlogCardReveal;
 
 /* ===== 清除文字选区（防止蓝框残留）===== */
 document.addEventListener("mousedown", (e) => {
-  if (!e.target.closest(".post-content")) {
-    window.getSelection()?.removeAllRanges();
+  if (!(e.target instanceof Element)) return;
+  if (e.target.closest(".post-content")) return;
+  if (e.target.closest("input, textarea, select, button, a, [contenteditable='true']")) return;
+
+  const selection = window.getSelection?.();
+  if (selection && !selection.isCollapsed) {
+    selection.removeAllRanges();
   }
 });
 

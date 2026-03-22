@@ -26,6 +26,15 @@
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=86400" }
       ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.cn; img-src 'self' https: data: blob:; font-src 'self' https://fonts.gstatic.cn data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        }
+      ]
     }
   ],
   "regions": ["hkg1"]
