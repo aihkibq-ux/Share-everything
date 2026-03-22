@@ -1449,8 +1449,13 @@ body {
     left: 28px;
     right: 28px;
     gap: 7px;
-    padding: 9px;
-    border-radius: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
   }
 
   body[data-page="blog"] .action-btn {
@@ -1459,6 +1464,13 @@ body {
     padding: 9px 8px;
     border-radius: 999px;
     font-size: 0.71rem;
+    background: rgba(16, 20, 42, 0.52);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow:
+      0 10px 24px rgba(0, 0, 0, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
 
   body[data-page="blog"] .action-btn svg {
@@ -1852,8 +1864,8 @@ body {
     left: 24px;
     right: 24px;
     gap: 6px;
-    padding: 8px;
-    border-radius: 22px;
+    padding: 0;
+    border-radius: 0;
   }
 
   body[data-page="blog"] .action-btn {
@@ -2025,27 +2037,5 @@ body {
   .fab-bookmark {
     bottom: calc(16px + env(safe-area-inset-bottom));
     right: 16px;
-  }
-}
-
-@media (max-width: 768px) {
-  .glow-orb {
-    filter: blur(72px);
-    opacity: 0.8;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .glow-orb {
-    animation: none;
-    filter: blur(48px);
-  }
-
-  .cursor-glow {
-    display: none;
-  }
-
-  #particles-canvas {
-    opacity: 0.42;
   }
 }
