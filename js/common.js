@@ -15,7 +15,29 @@ let mouseX = 0,
 let targetMouseX = 0,
   targetMouseY = 0;
 
-let particleCount = window.innerWidth < 768 ? 120 : 350;
+function getParticleCount() {
+  const viewportWidth = Math.max(
+    window.innerWidth || 0,
+    document.documentElement.clientWidth || 0,
+  );
+  const viewportHeight = Math.max(
+    window.innerHeight || 0,
+    document.documentElement.clientHeight || 0,
+  );
+  const area = viewportWidth * viewportHeight;
+
+  if (viewportWidth < 768) {
+    return Math.min(170, Math.max(90, Math.round(area / 3800)));
+  }
+
+  if (viewportWidth < 1600) {
+    return Math.min(430, Math.max(280, Math.round(area / 3900)));
+  }
+
+  return Math.min(680, Math.max(430, Math.round(area / 3600)));
+}
+
+let particleCount = getParticleCount();
 const colors = [
   "rgba(0, 255, 255, 1)",
   "rgba(77, 159, 255, 0.9)",
@@ -86,8 +108,8 @@ class Particle {
     const parallaxY = mouseY * (1000 / this.z) * 0.2;
     out.px = (this.x - width / 2) * perspective + width / 2 + parallaxX;
     out.py = (this.y - height / 2) * perspective + height / 2 + parallaxY;
-    out.pSize = this.size * perspective * 2;
-    out.opacity = Math.min(1, Math.max(0, 1 - this.z / 1500));
+    out.pSize = Math.max(0.5, this.size * perspective * 2.25);
+    out.opacity = Math.min(1, Math.max(0, 1.05 - this.z / 1600));
     out.color = this.color;
     return out;
   }
@@ -155,6 +177,7 @@ function drawParticlesFrame(advance = true) {
     bucketArrays[c][bucketCounts[c]++] = d;
   }
 
+  ctx.globalCompositeOperation = "screen";
   for (let i = 0; i < bucketKeys.length; i++) {
     const color = bucketKeys[i];
     const count = bucketCounts[color];
@@ -169,6 +192,7 @@ function drawParticlesFrame(advance = true) {
       ctx.fillRect(d.px - d.pSize, d.py - d.pSize, s, s);
     }
   }
+  ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
 }
 
@@ -209,10 +233,6 @@ function bootstrapParticles(force = false) {
 
   const hasViewport = resize();
   if (!hasViewport) return false;
-  if (prefersReducedMotion()) {
-    ctx.clearRect(0, 0, width, height);
-    return true;
-  }
 
   if (force || !particlesBootstrapped || particles.length !== particleCount) {
     initParticles();
@@ -220,6 +240,9 @@ function bootstrapParticles(force = false) {
   }
 
   drawParticlesFrame(false);
+  if (prefersReducedMotion()) {
+    return true;
+  }
   animateParticles();
   return true;
 }
@@ -246,7 +269,7 @@ window.addEventListener("resize", () => {
   resizeTimer = setTimeout(() => {
     resizeTimer = null;
     // Update particle count on resize in case of orientation change
-    const newCount = window.innerWidth < 768 ? 120 : 350;
+    const newCount = getParticleCount();
     if (newCount !== particleCount) {
       particleCount = newCount;
       rebuildParticleBuffers();
@@ -300,9 +323,8 @@ if (reducedMotionQuery) {
     if (reducedMotionQuery.matches) {
       stopParticles();
       clearParticleBootstrapTimer();
-      if (ctx && width && height) {
-        ctx.clearRect(0, 0, width, height);
-      }
+      particlesBootstrapped = false;
+      bootstrapParticles(true);
       return;
     }
 
