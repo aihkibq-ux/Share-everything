@@ -12,6 +12,7 @@
     const gridEl = document.getElementById("blogGrid");
     const emptyEl = document.getElementById("emptyState");
     const paginationEl = document.getElementById("pagination");
+    const escapeText = notionApi?.escapeHtml || ((value) => String(value ?? ""));
 
     if (!filtersEl || !searchInput || !gridEl || !emptyEl || !paginationEl) {
       return null;
@@ -53,9 +54,30 @@
       detailWarmupHandle = null;
     }
 
-    function showEmptyState() {
+    function renderEmptyStateMarkup({
+      title = "没有找到匹配的文章",
+      hint = "试试其他关键词或分类",
+      actionLabel = "",
+    } = {}) {
+      const actionHtml = actionLabel
+        ? `<button type="button" class="empty-state-action" data-empty-action="retry">${escapeText(actionLabel)}</button>`
+        : "";
+
+      return `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        <p>${escapeText(title)}</p>
+        <p style="font-size: 0.85rem;">${escapeText(hint)}</p>
+        ${actionHtml}
+      `;
+    }
+
+    function showEmptyState(options = {}) {
       clearDetailWarmup();
       gridEl.innerHTML = "";
+      emptyEl.innerHTML = renderEmptyStateMarkup(options);
       emptyEl.style.display = "flex";
       paginationEl.innerHTML = "";
     }
@@ -173,7 +195,7 @@
       const safeCoverImage = sanitizeImageUrl(post.coverImage);
       const coverHtml = safeCoverImage
         ? `<div class="blog-card-cover-placeholder blog-card-cover-img">
-             <img src="${esc(safeCoverImage)}" alt="${safeTitle}" loading="lazy">
+             <img src="${esc(safeCoverImage)}" alt="${safeTitle}" loading="lazy" decoding="async">
            </div>`
         : `<div class="blog-card-cover-placeholder" style="background: ${safeCoverGradient}">
              <span>${safeCoverEmoji}</span>
@@ -309,7 +331,11 @@
         if (currentToken !== renderToken) return;
 
         console.error("Failed to load posts:", error);
-        showEmptyState();
+        showEmptyState({
+          title: "加载失败",
+          hint: "请检查网络后重试",
+          actionLabel: "重试",
+        });
       }
     }
 
@@ -378,6 +404,12 @@
       image.remove();
     }
 
+    function handleEmptyStateClick(event) {
+      const button = event.target.closest("[data-empty-action='retry']");
+      if (!button || !emptyEl.contains(button)) return;
+      renderPosts();
+    }
+
     updatePageUI();
     renderFilters();
     searchInput.value = currentSearch;
@@ -387,6 +419,7 @@
     paginationEl.addEventListener("click", handlePaginationClick);
     gridEl.addEventListener("click", handleGridClick);
     gridEl.addEventListener("error", handleGridMediaError, true);
+    emptyEl.addEventListener("click", handleEmptyStateClick);
 
     renderPosts();
 
@@ -399,6 +432,7 @@
       paginationEl.removeEventListener("click", handlePaginationClick);
       gridEl.removeEventListener("click", handleGridClick);
       gridEl.removeEventListener("error", handleGridMediaError, true);
+      emptyEl.removeEventListener("click", handleEmptyStateClick);
       clearDetailWarmup();
     };
   }

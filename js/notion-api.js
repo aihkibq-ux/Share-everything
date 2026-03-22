@@ -276,11 +276,12 @@ const NotionAPI = (() => {
           startCursor = data.has_more ? data.next_cursor : null;
         } while (startCursor);
 
-        for (const block of blocks) {
-          if (block?.has_children) {
+        await Promise.all(
+          blocks.map(async (block) => {
+            if (!block?.has_children) return;
             block.children = await fetchAllBlockChildren(block.id);
-          }
-        }
+          }),
+        );
 
         return blocks;
       }
@@ -474,7 +475,7 @@ const NotionAPI = (() => {
       case "image": {
         const safeImageUrl = sanitizeUrl(block.url, SAFE_IMAGE_PROTOCOLS);
         if (!safeImageUrl) return childrenHtml;
-        return `<img src="${escapeHtml(safeImageUrl)}" alt="${escapeHtml(block.caption)}" loading="lazy">${childrenHtml}`;
+        return `<img src="${escapeHtml(safeImageUrl)}" alt="${escapeHtml(block.caption)}" loading="lazy" decoding="async">${childrenHtml}`;
       }
       case "callout": {
         const iconHtml = block.icon

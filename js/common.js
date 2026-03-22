@@ -14,30 +14,7 @@ let mouseX = 0,
   mouseY = 0;
 let targetMouseX = 0,
   targetMouseY = 0;
-
-function getParticleCount() {
-  const viewportWidth = Math.max(
-    window.innerWidth || 0,
-    document.documentElement.clientWidth || 0,
-  );
-  const viewportHeight = Math.max(
-    window.innerHeight || 0,
-    document.documentElement.clientHeight || 0,
-  );
-  const area = viewportWidth * viewportHeight;
-
-  if (viewportWidth < 768) {
-    return Math.min(140, Math.max(90, Math.round(area / 5200)));
-  }
-
-  if (viewportWidth < 1600) {
-    return Math.min(320, Math.max(220, Math.round(area / 5200)));
-  }
-
-  return Math.min(420, Math.max(320, Math.round(area / 5000)));
-}
-
-let particleCount = getParticleCount();
+let particleCount = window.innerWidth < 768 ? 120 : 350;
 const colors = [
   "rgba(0, 255, 255, 1)",
   "rgba(77, 159, 255, 0.9)",
@@ -108,7 +85,7 @@ class Particle {
     const parallaxY = mouseY * (1000 / this.z) * 0.2;
     out.px = (this.x - width / 2) * perspective + width / 2 + parallaxX;
     out.py = (this.y - height / 2) * perspective + height / 2 + parallaxY;
-    out.pSize = Math.max(0.35, this.size * perspective * 1.9);
+    out.pSize = this.size * perspective * 2;
     out.opacity = Math.min(1, Math.max(0, 1 - this.z / 1500));
     out.color = this.color;
     return out;
@@ -147,14 +124,6 @@ rebuildParticleBuffers();
 let speedMultiplier = 1;
 let targetSpeedMultiplier = 1;
 let particlesBootstrapped = false;
-const reducedMotionQuery =
-  typeof window.matchMedia === "function"
-    ? window.matchMedia("(prefers-reduced-motion: reduce)")
-    : null;
-
-function prefersReducedMotion() {
-  return Boolean(reducedMotionQuery?.matches);
-}
 
 function drawParticlesFrame(advance = true) {
   if (!ctx || !width || !height) return;
@@ -169,8 +138,7 @@ function drawParticlesFrame(advance = true) {
   // Reset counters for this frame
   bucketKeys.forEach((c) => (bucketCounts[c] = 0));
 
-  const activeParticleCount = Math.min(particleCount, particles.length, drawPool.length);
-  for (let i = 0; i < activeParticleCount; i++) {
+  for (let i = 0; i < particleCount; i++) {
     if (advance) particles[i].update();
     const d = particles[i].getDrawData(drawPool[i]);
     const c = d.color;
@@ -209,17 +177,8 @@ function clearParticleBootstrapTimer() {
 }
 
 function animateParticles() {
-  if (!ctx || prefersReducedMotion()) return;
-
-  try {
-    drawParticlesFrame(true);
-  } catch (error) {
-    console.error("Particle animation error:", error);
-    stopParticles();
-    particlesBootstrapped = false;
-    return;
-  }
-
+  if (!ctx) return;
+  drawParticlesFrame(true);
   rafId = requestAnimationFrame(animateParticles);
 }
 
@@ -238,9 +197,6 @@ function bootstrapParticles(force = false) {
   }
 
   drawParticlesFrame(false);
-  if (prefersReducedMotion()) {
-    return true;
-  }
   animateParticles();
   return true;
 }
@@ -266,8 +222,7 @@ window.addEventListener("resize", () => {
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     resizeTimer = null;
-    // Update particle count on resize in case of orientation change
-    const newCount = getParticleCount();
+    const newCount = window.innerWidth < 768 ? 120 : 350;
     if (newCount !== particleCount) {
       particleCount = newCount;
       rebuildParticleBuffers();
@@ -315,26 +270,6 @@ document.addEventListener("visibilitychange", () => {
     scheduleParticleBootstrap(!particlesBootstrapped || !rafId);
   }
 });
-
-if (reducedMotionQuery) {
-  const handleReducedMotionChange = () => {
-    if (reducedMotionQuery.matches) {
-      stopParticles();
-      clearParticleBootstrapTimer();
-      particlesBootstrapped = false;
-      bootstrapParticles(true);
-      return;
-    }
-
-    scheduleParticleBootstrap(true);
-  };
-
-  if (typeof reducedMotionQuery.addEventListener === "function") {
-    reducedMotionQuery.addEventListener("change", handleReducedMotionChange);
-  } else if (typeof reducedMotionQuery.addListener === "function") {
-    reducedMotionQuery.addListener(handleReducedMotionChange);
-  }
-}
 
 /* ===== Cursor Glow, Spotlight & Parallax (merged mousemove) ===== */
 const cursorGlow = document.getElementById("cursorGlow");

@@ -154,8 +154,9 @@ body {
   width: 100vw;
   height: 100vh;
   z-index: 1;
-  pointer-events: none;
+  pointer-events: auto;
   opacity: 0.8;
+  will-change: transform;
 }
 
 /* ===== Cursor Follow Glow ===== */
@@ -795,6 +796,13 @@ body {
   transform: translateY(30px);
 }
 
+@supports (content-visibility: auto) {
+  .blog-card {
+    content-visibility: auto;
+    contain-intrinsic-size: 360px;
+  }
+}
+
 .blog-card.visible {
   opacity: 1;
   transform: translateY(0);
@@ -1296,6 +1304,23 @@ body {
 .empty-state p {
   font-size: 1.1rem;
   margin-bottom: 8px;
+}
+
+.empty-state-action {
+  margin-top: 18px;
+  padding: 10px 18px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+  transition: all 0.3s var(--transition-smooth);
+}
+
+.empty-state-action:hover {
+  border-color: var(--accent-cyan);
+  background: rgba(0, 229, 255, 0.12);
 }
 
 /* ===== Loading Skeleton ===== */
@@ -2021,6 +2046,6 @@ body {
   }
 
   #particles-canvas {
-    opacity: 0.3;
+    opacity: 0.42;
   }
 }
