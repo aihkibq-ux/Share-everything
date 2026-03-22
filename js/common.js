@@ -339,21 +339,12 @@ function syncCursorGlowState() {
   if (enabled === cursorTrackingEnabled) return;
   cursorTrackingEnabled = enabled;
 
-  if (enabled) {
-    document.addEventListener("mousemove", handleMouseMove, { passive: true });
-    return;
-  }
-
-  document.removeEventListener("mousemove", handleMouseMove);
-  if (mouseAF) {
-    cancelAnimationFrame(mouseAF);
-    mouseAF = null;
-  }
-  if (cursorGlow) {
+  if (!enabled && cursorGlow) {
     cursorGlow.style.transform = "";
   }
 }
 
+document.addEventListener("mousemove", handleMouseMove, { passive: true });
 bindMediaQueryChange(finePointerQuery, syncCursorGlowState);
 bindMediaQueryChange(reducedMotionQuery, syncCursorGlowState);
 syncCursorGlowState();
