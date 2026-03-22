@@ -32,6 +32,8 @@
     let searchDebounce = null;
     let detailWarmupHandle = null;
     let historySaveHandle = null;
+    let revealFrame = null;
+    let cleanupCardReveal = null;
 
     const params = new URLSearchParams(window.location.search);
     if (params.get("category")) currentCategory = params.get("category");
@@ -67,6 +69,18 @@
       historySaveHandle = null;
     }
 
+    function clearCardReveal() {
+      if (revealFrame != null) {
+        window.cancelAnimationFrame(revealFrame);
+        revealFrame = null;
+      }
+
+      if (typeof cleanupCardReveal === "function") {
+        cleanupCardReveal();
+      }
+      cleanupCardReveal = null;
+    }
+
     function renderEmptyStateMarkup({
       title = "没有找到匹配的文章",
       hint = "试试其他关键词或分类",
@@ -88,6 +102,7 @@
     }
 
     function showEmptyState(options = {}) {
+      clearCardReveal();
       clearDetailWarmup();
       gridEl.innerHTML = "";
       emptyEl.innerHTML = renderEmptyStateMarkup(options);
@@ -311,6 +326,7 @@
 
     async function renderPosts() {
       const currentToken = ++renderToken;
+      clearCardReveal();
 
       try {
         let data;
@@ -321,9 +337,12 @@
           if (currentSearch) {
             const query = currentSearch.toLowerCase();
             bookmarks = bookmarks.filter(
-              (post) =>
-                post.title.toLowerCase().includes(query) ||
-                (post.excerpt || "").toLowerCase().includes(query),
+              (post) => {
+                const searchText = typeof post._searchText === "string" && post._searchText
+                  ? post._searchText
+                  : `${post.title || ""} ${post.excerpt || ""}`.toLowerCase();
+                return searchText.includes(query);
+              },
             );
           }
 
@@ -361,8 +380,9 @@
         renderPagination(data);
         scheduleDetailWarmup(data.results);
 
-        requestAnimationFrame(() => {
-          window.initBlogCardReveal?.();
+        revealFrame = window.requestAnimationFrame(() => {
+          revealFrame = null;
+          cleanupCardReveal = window.initBlogCardReveal?.() || null;
         });
 
         scheduleHistorySave();
@@ -472,6 +492,7 @@
       gridEl.removeEventListener("click", handleGridClick);
       gridEl.removeEventListener("error", handleGridMediaError, true);
       emptyEl.removeEventListener("click", handleEmptyStateClick);
+      clearCardReveal();
       clearDetailWarmup();
       clearHistorySave();
     };

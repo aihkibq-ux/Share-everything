@@ -352,7 +352,14 @@ syncCursorGlowState();
 /* ===== Blog Card Reveal (reuse for blog pages) ===== */
 function initBlogCardReveal() {
   const blogCards = document.querySelectorAll(".blog-card");
-  if (blogCards.length === 0) return;
+  if (blogCards.length === 0) return () => {};
+
+  if (typeof IntersectionObserver !== "function") {
+    blogCards.forEach((card) => card.classList.add("visible"));
+    return () => {};
+  }
+
+  const revealTimeouts = new Set();
 
   const observer = new IntersectionObserver(
     (entries) => {
@@ -360,7 +367,11 @@ function initBlogCardReveal() {
         if (entry.isIntersecting) {
           const card = entry.target;
           const i = Number(card.dataset.revealIndex || 0);
-          setTimeout(() => card.classList.add("visible"), i * 80);
+          const timeoutId = window.setTimeout(() => {
+            revealTimeouts.delete(timeoutId);
+            card.classList.add("visible");
+          }, i * 80);
+          revealTimeouts.add(timeoutId);
           observer.unobserve(card);
         }
       });
@@ -371,6 +382,12 @@ function initBlogCardReveal() {
     el.dataset.revealIndex = String(index);
     observer.observe(el);
   });
+
+  return () => {
+    observer.disconnect();
+    revealTimeouts.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    revealTimeouts.clear();
+  };
 }
 
 // Expose for use in page scripts
@@ -388,13 +405,31 @@ function ensureMetaTag(selector, attributes) {
   return meta;
 }
 
+function ensureLinkTag(selector, attributes) {
+  let link = document.head?.querySelector(selector);
+  if (!link) {
+    link = document.createElement("link");
+    Object.entries(attributes).forEach(([key, value]) => {
+      link.setAttribute(key, value);
+    });
+    document.head?.appendChild(link);
+  }
+  return link;
+}
+
 function updateSeoMeta({
   title,
   description,
   url = window.location.href,
+  canonicalUrl = url,
   ogTitle = title,
   ogDescription = description,
 } = {}) {
+  const resolvedUrl = new URL(url, window.location.href);
+  resolvedUrl.hash = "";
+  const resolvedCanonicalUrl = new URL(canonicalUrl, window.location.href);
+  resolvedCanonicalUrl.hash = "";
+
   if (typeof title === "string" && title) {
     document.title = title;
   }
@@ -419,10 +454,23 @@ function updateSeoMeta({
 
   ensureMetaTag('meta[property="og:url"]', {
     property: "og:url",
-  }).content = new URL(url, window.location.href).href;
+  }).content = resolvedUrl.href;
+
+  ensureLinkTag('link[rel="canonical"]', {
+    rel: "canonical",
+  }).href = resolvedCanonicalUrl.href;
 }
 
 window.updateSeoMeta = updateSeoMeta;
+updateSeoMeta({
+  title: document.title,
+  description: document.querySelector('meta[name="description"]')?.content,
+  ogTitle: document.querySelector('meta[property="og:title"]')?.content || document.title,
+  ogDescription:
+    document.querySelector('meta[property="og:description"]')?.content ||
+    document.querySelector('meta[name="description"]')?.content,
+  url: window.location.href,
+});
 
 /* ===== 清除文字选区（防止蓝框残留）===== */
 document.addEventListener("mousedown", (e) => {
@@ -510,6 +558,7 @@ const SPARouter = (() => {
   let navigationToken = 0;
   let activeNavigationController = null;
   const loadedScripts = new Set();
+  const MAX_PAGE_CACHE_ENTRIES = 6;
   const pageCache = new Map();
   const prefetched = new Set();
 
@@ -536,6 +585,33 @@ const SPARouter = (() => {
     }
 
     return resolved.href;
+  }
+
+  function rememberPageHtml(cacheKey, html) {
+    if (pageCache.has(cacheKey)) {
+      pageCache.delete(cacheKey);
+    }
+    pageCache.set(cacheKey, html);
+
+    while (pageCache.size > MAX_PAGE_CACHE_ENTRIES) {
+      const oldestCacheKey = pageCache.keys().next().value;
+      if (!oldestCacheKey) break;
+      pageCache.delete(oldestCacheKey);
+      prefetched.delete(oldestCacheKey);
+    }
+  }
+
+  function rememberPrefetchedPage(cacheKey) {
+    if (prefetched.has(cacheKey)) {
+      prefetched.delete(cacheKey);
+    }
+    prefetched.add(cacheKey);
+
+    while (prefetched.size > MAX_PAGE_CACHE_ENTRIES) {
+      const oldestPrefetchedKey = prefetched.values().next().value;
+      if (!oldestPrefetchedKey) break;
+      prefetched.delete(oldestPrefetchedKey);
+    }
   }
 
   function ensureScript(src) {
@@ -565,7 +641,10 @@ const SPARouter = (() => {
     const routeKey = getRouteKey(url);
     const cacheKey = getPageCacheKey(routeKey);
     const cachedHtml = pageCache.get(cacheKey);
-    if (cachedHtml) return cachedHtml;
+    if (cachedHtml) {
+      rememberPageHtml(cacheKey, cachedHtml);
+      return cachedHtml;
+    }
 
     const response = await fetch(routeKey, {
       cache: "no-store",
@@ -574,7 +653,7 @@ const SPARouter = (() => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const html = await response.text();
-    pageCache.set(cacheKey, html);
+    rememberPageHtml(cacheKey, html);
     return html;
   }
 
@@ -583,7 +662,7 @@ const SPARouter = (() => {
     const cacheKey = getPageCacheKey(url);
     if (prefetched.has(cacheKey) || pageCache.has(cacheKey)) return;
 
-    prefetched.add(cacheKey);
+    rememberPrefetchedPage(cacheKey);
     fetchPageHtml(url).catch(() => {
       prefetched.delete(cacheKey);
     });

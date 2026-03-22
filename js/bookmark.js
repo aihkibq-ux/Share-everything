@@ -68,22 +68,43 @@ const BookmarkManager = (() => {
     return typeof value === "string" ? value : fallback;
   }
 
+  function normalizeTags(value) {
+    if (!Array.isArray(value)) return [];
+
+    return value
+      .map((tag) => normalizeText(tag).trim())
+      .filter(Boolean);
+  }
+
+  function buildBookmarkSearchText({ title = "", excerpt = "", tags = [] } = {}) {
+    return [
+      normalizeText(title),
+      normalizeText(excerpt),
+      ...normalizeTags(tags),
+    ].join(" ").toLowerCase();
+  }
+
   function normalizeBookmark(entry) {
     if (!entry || typeof entry !== "object") return null;
 
     const id = normalizeText(entry.id).trim();
     if (!id) return null;
+    const title = normalizeText(entry.title);
+    const excerpt = normalizeText(entry.excerpt);
+    const tags = normalizeTags(entry.tags);
 
     return {
       id,
-      title: normalizeText(entry.title),
+      title,
       category: normalizeText(entry.category),
-      excerpt: normalizeText(entry.excerpt),
+      excerpt,
       date: normalizeText(entry.date),
       readTime: normalizeText(entry.readTime),
       coverImage: sanitizeImageUrl(entry.coverImage),
       coverEmoji: normalizeText(entry.coverEmoji, "📝"),
       coverGradient: sanitizeCoverBackground(entry.coverGradient),
+      tags,
+      _searchText: buildBookmarkSearchText({ title, excerpt, tags }),
       timestamp: Number.isFinite(Number(entry.timestamp)) ? Number(entry.timestamp) : Date.now(),
     };
   }
@@ -114,6 +135,7 @@ const BookmarkManager = (() => {
         coverImage: post.coverImage || null,
         coverEmoji: post.coverEmoji || "📝",
         coverGradient: post.coverGradient || null,
+        tags: Array.isArray(post.tags) ? post.tags : [],
         timestamp: Date.now(),
       });
       if (!normalizedBookmark) return exists;
@@ -169,6 +191,7 @@ const BookmarkManager = (() => {
             coverImage: img?.src || null,
             coverEmoji: emoji?.textContent || '📝',
             coverGradient: null,
+            tags: [],
             timestamp: Date.now(),
           });
           if (normalizedBookmark) {

@@ -188,7 +188,6 @@ function isRateLimited(req) {
     rateLimitStore.set(clientIp, { count: 1, windowStart: now });
   } else {
     current.count += 1;
-    rateLimitStore.set(clientIp, current);
   }
 
   for (const [ip, entry] of rateLimitStore.entries()) {
