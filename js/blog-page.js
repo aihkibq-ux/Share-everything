@@ -33,7 +33,6 @@
     let renderToken = 0;
     let searchDebounce = null;
     let detailWarmupHandle = null;
-    let historySaveHandle = null;
     let revealFrame = null;
     let cleanupCardReveal = null;
     let statusAnnouncementHandle = null;
@@ -61,18 +60,6 @@
       }
 
       detailWarmupHandle = null;
-    }
-
-    function clearHistorySave() {
-      if (historySaveHandle == null) return;
-
-      if ("cancelIdleCallback" in window) {
-        window.cancelIdleCallback(historySaveHandle);
-      } else {
-        clearTimeout(historySaveHandle);
-      }
-
-      historySaveHandle = null;
     }
 
     function clearCardReveal() {
@@ -271,38 +258,6 @@
       }
     }
 
-    function saveHistory() {
-      try {
-        const entries = JSON.parse(localStorage.getItem("blog_history") || "[]");
-        entries.unshift({
-          url: window.location.href,
-          category: currentCategory,
-          search: currentSearch,
-          timestamp: Date.now(),
-        });
-        localStorage.setItem("blog_history", JSON.stringify(entries.slice(0, 50)));
-      } catch (error) {
-        // localStorage unavailable
-      }
-    }
-
-    function scheduleHistorySave() {
-      clearHistorySave();
-
-      const persistHistory = () => {
-        historySaveHandle = null;
-        saveHistory();
-      };
-
-      if ("requestIdleCallback" in window) {
-        historySaveHandle = window.requestIdleCallback(persistHistory, {
-          timeout: 900,
-        });
-      } else {
-        historySaveHandle = window.setTimeout(persistHistory, 180);
-      }
-    }
-
     function renderCard(post) {
       const esc = notionApi.escapeHtml;
       const catColor = notionApi.getCategoryColor(post.category);
@@ -451,8 +406,6 @@
           revealFrame = null;
           cleanupCardReveal = window.initBlogCardReveal?.() || null;
         });
-
-        scheduleHistorySave();
       } catch (error) {
         if (currentToken !== renderToken) return;
 
@@ -574,7 +527,6 @@
       if (statusEl) statusEl.textContent = "";
       clearCardReveal();
       clearDetailWarmup();
-      clearHistorySave();
     };
   }
 

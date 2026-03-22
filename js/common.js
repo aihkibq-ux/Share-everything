@@ -444,7 +444,6 @@ window.SiteUtils = Object.freeze({
   createMediaQueryList,
   getPreferredBlogReturnUrl,
   getPostIdFromUrl,
-  isBlogPageUrl,
   normalizePostId,
   rememberBlogReturnUrl,
   sanitizeImageUrl,
@@ -927,7 +926,6 @@ const PageRuntime = (() => {
 
   return {
     getPageIdFromUrl,
-    initializeCurrentPage: () => initializePage(getPageIdFromUrl(window.location.href)),
     initializePage,
     cleanupCurrentPage,
     register,

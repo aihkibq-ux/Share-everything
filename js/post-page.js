@@ -79,7 +79,6 @@
     let backClickHandler = null;
     let bookmarkControlsVisible = false;
     let mediaQueryCleanup = null;
-    let readingHistoryHandle = null;
 
     function cleanupBookmarkHandlers() {
       if (!bookmarkBindings.length) return;
@@ -88,18 +87,6 @@
         element.removeEventListener("click", handler);
       });
       bookmarkBindings = [];
-    }
-
-    function clearReadingHistoryTask() {
-      if (readingHistoryHandle == null) return;
-
-      if ("cancelIdleCallback" in window) {
-        window.cancelIdleCallback(readingHistoryHandle);
-      } else {
-        clearTimeout(readingHistoryHandle);
-      }
-
-      readingHistoryHandle = null;
     }
 
     function setBookmarkControlsVisible(isVisible) {
@@ -188,41 +175,6 @@
       setBookmarkControlsVisible(false);
       emptyEl.style.display = "flex";
       window.StructuredData?.clear?.("post-article");
-    }
-
-    function saveReadingHistory(post) {
-      try {
-        const entries = JSON.parse(localStorage.getItem("reading_history") || "[]");
-        const filtered = entries.filter((historyItem) => historyItem.id !== post.id);
-        filtered.unshift({
-          id: post.id,
-          title: post.title,
-          category: post.category,
-          timestamp: Date.now(),
-        });
-        localStorage.setItem("reading_history", JSON.stringify(filtered.slice(0, 100)));
-      } catch (error) {
-        // localStorage unavailable
-      }
-    }
-
-    function scheduleReadingHistorySave(post) {
-      clearReadingHistoryTask();
-
-      const persistHistory = () => {
-        readingHistoryHandle = null;
-        if (!isDisposed) {
-          saveReadingHistory(post);
-        }
-      };
-
-      if ("requestIdleCallback" in window) {
-        readingHistoryHandle = window.requestIdleCallback(persistHistory, {
-          timeout: 900,
-        });
-      } else {
-        readingHistoryHandle = window.setTimeout(persistHistory, 180);
-      }
     }
 
     function initBookmark(post) {
@@ -377,7 +329,6 @@
           });
         }
 
-        scheduleReadingHistorySave(post);
         initBookmark(post);
       } catch (error) {
         if (isDisposed) return;
@@ -395,7 +346,6 @@
       cleanupBookmarkHandlers();
       cleanupBackHandler();
       mediaQueryCleanup?.();
-      clearReadingHistoryTask();
       window.StructuredData?.clear?.("post-article");
     };
   }

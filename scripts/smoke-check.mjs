@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
@@ -12,6 +13,11 @@ function checkSyntax(relativePath) {
   new vm.Script(read(relativePath), {
     filename: relativePath,
   });
+}
+
+async function checkModuleSyntax(relativePath) {
+  const encodedSource = Buffer.from(read(relativePath), "utf8").toString("base64");
+  await import(`data:text/javascript;base64,${encodedSource}`);
 }
 
 function expectIncludes(source, needle, message) {
@@ -31,6 +37,7 @@ function expectIncludes(source, needle, message) {
   "api/sitemap.js",
   "server/notion-server.js",
 ].forEach(checkSyntax);
+await checkModuleSyntax("worker/index.js");
 
 const indexHtml = read("index.html");
 const blogHtml = read("blog.html");
@@ -74,6 +81,10 @@ assert.ok(
   !blogPageJs.includes("await bookmarkManager.hydrateMissingMetadata"),
   "blog page should hydrate legacy bookmark metadata in the background",
 );
+assert.ok(
+  !blogPageJs.includes("blog_history"),
+  "blog page should not keep unused blog_history persistence code",
+);
 expectIncludes(bookmarkJs, "parseSerializedTags", "bookmark fallback should recover serialized tags");
 expectIncludes(bookmarkJs, "hydrateMissingMetadata", "bookmark manager should hydrate legacy metadata");
 expectIncludes(notionApiJs, "collectManagedCacheEntries", "notion cache should evict older entries on quota pressure");
@@ -83,6 +94,10 @@ expectIncludes(indexPageJs, 'navigateTo("/blog.html"', "index page navigation sh
 expectIncludes(postPageJs, 'window.StructuredData?.set?.("post-article"', "post page should publish article structured data");
 expectIncludes(postPageJs, "initialPostData", "post page should reuse server-rendered post payloads");
 expectIncludes(postPageJs, "siteUtils.getPreferredBlogReturnUrl", "post page back navigation should restore the preferred blog listing route");
+assert.ok(
+  !postPageJs.includes("reading_history"),
+  "post page should not keep unused reading_history persistence code",
+);
 expectIncludes(apiPostJs, 'upsertStructuredDataScript(html, "post-article"', "article HTML route should emit structured data");
 expectIncludes(apiPostJs, 'id="initialPostData"', "article HTML route should emit initial post data");
 expectIncludes(apiSitemapJs, "buildPostUrl", "dynamic sitemap should include article routes");
