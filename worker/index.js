@@ -281,8 +281,7 @@ function buildAllowedQueryString(searchParams, pathKind) {
   const params = new URLSearchParams();
 
   for (const [key, value] of searchParams.entries()) {
-    if (!allowedParams) continue;
-    if (!allowedParams.has(key)) return null;
+    if (!allowedParams?.has(key)) return null;
     params.append(key, value);
   }
 
