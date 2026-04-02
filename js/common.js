@@ -249,19 +249,23 @@ window.addEventListener("touchcancel", () => (targetSpeedMultiplier = 1), {
 });
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => scheduleParticleBootstrap(), {
+  document.addEventListener("DOMContentLoaded", () => {
+    if (!reducedMotionQuery.matches) scheduleParticleBootstrap();
+  }, {
     once: true,
   });
-} else {
+} else if (!reducedMotionQuery.matches) {
   scheduleParticleBootstrap();
 }
 
-window.addEventListener("load", () => scheduleParticleBootstrap(true), {
+window.addEventListener("load", () => {
+  if (!reducedMotionQuery.matches) scheduleParticleBootstrap(true);
+}, {
   once: true,
 });
 
 window.addEventListener("pageshow", () => {
-  if (!particlesBootstrapped || !rafId) {
+  if (!reducedMotionQuery.matches && (!particlesBootstrapped || !rafId)) {
     scheduleParticleBootstrap(true);
   }
 });
@@ -271,8 +275,18 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     stopParticles();
     clearParticleBootstrapTimer();
-  } else if (ctx) {
+  } else if (ctx && !reducedMotionQuery.matches) {
     scheduleParticleBootstrap(!particlesBootstrapped || !rafId);
+  }
+});
+
+// 尊重 prefers-reduced-motion：暂停粒子动画
+bindMediaQueryChange(reducedMotionQuery, () => {
+  if (reducedMotionQuery.matches) {
+    stopParticles();
+    clearParticleBootstrapTimer();
+  } else if (ctx && !document.hidden) {
+    scheduleParticleBootstrap(true);
   }
 });
 
@@ -306,7 +320,7 @@ function sanitizeCoverBackground(value, fallback = null) {
   if (typeof value !== "string") return fallback;
 
   const trimmed = value.trim();
-  const isGradient = /^(linear-gradient|radial-gradient)\([#(),.%\sa-zA-Z0-9+-]+\)$/.test(trimmed);
+  const isGradient = /^(linear-gradient|radial-gradient)\([#,.%\sa-zA-Z0-9+-]+\)$/.test(trimmed);
   if (!trimmed || !isGradient) return fallback;
   if (trimmed.includes(";") || /url\s*\(/i.test(trimmed)) return fallback;
   return trimmed;
@@ -1204,8 +1218,10 @@ const SPARouter = (() => {
         return;
       }
 
-      // 按需加载依赖样式表
-      const extStylesheets = doc.querySelectorAll('link[rel="stylesheet"][href]:not([href*="style.css"])');
+      // 按需加载依赖样式表（排除主样式表和延迟字体）
+      const extStylesheets = doc.querySelectorAll(
+        'link[rel="stylesheet"][href]:not([href*="style.css"]):not([data-deferred-fonts])',
+      );
       for (const link of extStylesheets) {
         const styleHref = link.getAttribute("href");
         if (styleHref) {
@@ -1283,6 +1299,8 @@ const SPARouter = (() => {
 
       // ⑧ 淡入
       content.style.transform = "translateY(12px)";
+      // Force a synchronous reflow so the browser registers the starting
+      // position (translateY(12px)) before we transition to translateY(0).
       void content.offsetHeight;
       content.style.transition = "opacity 0.25s ease, transform 0.25s var(--transition-smooth)";
       content.style.opacity = "1";

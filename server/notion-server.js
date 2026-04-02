@@ -212,6 +212,7 @@ function mapNotionPage(page) {
     coverEmoji: page.icon?.emoji || "📝",
     coverGradient: gradientForCategory(category),
     tags,
+    _searchText: [title, excerpt, ...tags].join(" ").toLowerCase(),
   };
 }
 
