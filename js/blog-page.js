@@ -278,6 +278,8 @@
 
     function renderCard(post) {
       const esc = notionApi.escapeHtml;
+      // Safety: catColor values originate from a hardcoded map (CATEGORY_COLORS),
+      // not from user input, so they are safe to inject into style attributes.
       const catColor = notionApi.getCategoryColor(post.category);
       const bookmarked = bookmarkManager.isBookmarked(post.id);
       const defaultCoverGradient = "linear-gradient(135deg, #1a1a2e, #16213e)";

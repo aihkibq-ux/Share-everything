@@ -197,7 +197,7 @@ body {
   width: 100vw;
   height: 100vh;
   z-index: 1;
-  pointer-events: auto;
+  pointer-events: none;
   opacity: 0.8;
   will-change: transform;
 }

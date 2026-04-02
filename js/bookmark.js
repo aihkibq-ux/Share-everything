@@ -16,7 +16,8 @@ const BookmarkManager = (() => {
     if (window.CSS?.escape) {
       return window.CSS.escape(value);
     }
-    return String(value).replace(/["\\]/g, "\\$&");
+    // Fallback: escape all characters that are special in CSS selectors
+    return String(value).replace(/[!"#$%&'()*+,./:;<=>?@[\\\]^`{|}~]/g, "\\$&");
   }
 
   function readBookmarks() {

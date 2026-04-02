@@ -1,0 +1,12 @@
+{
+  "name": "share-everything",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Share Everything — 探索、记录、分享",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "check": "node scripts/smoke-check.mjs"
+  }
+}

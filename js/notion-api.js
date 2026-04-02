@@ -1,5 +1,11 @@
 /**
- * notion-api.js — Notion API 集成层
+ * notion-api.js — Notion API 集成层（客户端）
+ *
+ * ⚠️ 以下逻辑与服务端 server/notion-server.js 共享（无构建步骤，暂以复制方式维护）：
+ *   - NOTION_ANNOTATION_STYLES, CATEGORY_COLORS, gradientForCategory
+ *   - escapeHtml, sanitizeUrl, richTextToHtml, richTextToPlain
+ *   - mapNotionPage, mapNotionBlock, renderBlocks, renderBlock, renderListItem
+ * 修改任何上述函数时，务必同步更新 server/notion-server.js 中的对应版本。
  */
 
 const NotionAPI = (() => {
@@ -75,6 +81,7 @@ const NotionAPI = (() => {
 
   function collectManagedCacheEntries(excludeKey) {
     const entries = [];
+    const corruptedKeys = [];
 
     try {
       for (let index = 0; index < sessionStorage.length; index += 1) {
@@ -94,13 +101,15 @@ const NotionAPI = (() => {
             timestamp: Number.isFinite(Number(parsed?.timestamp)) ? Number(parsed.timestamp) : 0,
           });
         } catch (error) {
-          removeCacheEntry(key);
+          // Don't delete during iteration — collect and remove afterwards
+          corruptedKeys.push(key);
         }
       }
     } catch (error) {
       return [];
     }
 
+    corruptedKeys.forEach(removeCacheEntry);
     return entries.sort((left, right) => left.timestamp - right.timestamp);
   }
 

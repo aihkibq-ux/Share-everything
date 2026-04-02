@@ -211,6 +211,8 @@ function scheduleParticleBootstrap(force = false, attempt = 0) {
         particleBootstrapTimer = null;
         scheduleParticleBootstrap(true, attempt + 1);
       }, 80 + attempt * 80);
+    } else if (!didBootstrap) {
+      console.warn("Particle system failed to bootstrap after maximum retries.");
     }
   });
 }
@@ -960,6 +962,7 @@ const SPARouter = (() => {
   let navigationToken = 0;
   let activeNavigationController = null;
   const loadedScripts = new Set();
+  const loadedStylesheets = new Set();
   const MAX_PAGE_CACHE_ENTRIES = 6;
   const PAGE_CACHE_TTL_MS = 1000 * 60 * 5;
   const pageCache = new Map();
@@ -1079,6 +1082,35 @@ const SPARouter = (() => {
     });
   }
 
+  function ensureStylesheet(href) {
+    const resolvedHref = resolveUrl(href).href;
+    const hasStylesheet =
+      loadedStylesheets.has(resolvedHref) ||
+      Array.from(document.querySelectorAll('link[rel="stylesheet"]')).some(
+        (link) => link.href === resolvedHref,
+      );
+
+    if (hasStylesheet) {
+      loadedStylesheets.add(resolvedHref);
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = resolvedHref;
+      link.onload = () => {
+        loadedStylesheets.add(resolvedHref);
+        resolve();
+      };
+      link.onerror = () => {
+        loadedStylesheets.add(resolvedHref);
+        resolve();
+      };
+      document.head.appendChild(link);
+    });
+  }
+
   async function fetchPageHtml(url, { signal } = {}) {
     const routeKey = getRouteKey(url);
     const cacheKey = getPageCacheKey(routeKey);
@@ -1171,6 +1203,16 @@ const SPARouter = (() => {
         window.location.href = targetRouteKey;
         return;
       }
+
+      // 按需加载依赖样式表
+      const extStylesheets = doc.querySelectorAll('link[rel="stylesheet"][href]:not([href*="style.css"])');
+      for (const link of extStylesheets) {
+        const styleHref = link.getAttribute("href");
+        if (styleHref) {
+          await ensureStylesheet(styleHref);
+        }
+      }
+      if (currentToken !== navigationToken) return;
 
       // 按需加载依赖脚本
       const extScripts = doc.querySelectorAll('script[src]:not([src*="common"])');

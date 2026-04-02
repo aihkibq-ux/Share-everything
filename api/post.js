@@ -50,13 +50,13 @@ function injectInitialPostData(html, payload) {
 function replaceHeadMeta(html, { title, description, url, image, imageAlt, canonicalUrl, robots, ogType }) {
   const replacements = [
     [/<title>[\s\S]*?<\/title>/, `<title>${escapeHtml(title)}</title>`],
-    [/<meta name="description" content="[^"]*" \/>/, `<meta name="description" content="${escapeAttribute(description)}" />`],
-    [/<meta property="og:title" content="[^"]*" \/>/, `<meta property="og:title" content="${escapeAttribute(title)}" />`],
-    [/<meta property="og:description" content="[^"]*" \/>/, `<meta property="og:description" content="${escapeAttribute(description)}" />`],
-    [/<meta property="og:type" content="[^"]*" \/>/, `<meta property="og:type" content="${escapeAttribute(ogType || "website")}" />`],
-    [/<meta property="og:url" content="[^"]*" \/>/, `<meta property="og:url" content="${escapeAttribute(url)}" />`],
-    [/<meta property="og:image" content="[^"]*" \/>/, `<meta property="og:image" content="${escapeAttribute(image)}" />`],
-    [/<meta property="og:image:alt" content="[^"]*" \/>/, `<meta property="og:image:alt" content="${escapeAttribute(imageAlt)}" />`],
+    [/<meta\s+name="description"\s+content="[^"]*"\s*\/?>/, `<meta name="description" content="${escapeAttribute(description)}" />`],
+    [/<meta\s+property="og:title"\s+content="[^"]*"\s*\/?>/, `<meta property="og:title" content="${escapeAttribute(title)}" />`],
+    [/<meta\s+property="og:description"\s+content="[^"]*"\s*\/?>/, `<meta property="og:description" content="${escapeAttribute(description)}" />`],
+    [/<meta\s+property="og:type"\s+content="[^"]*"\s*\/?>/, `<meta property="og:type" content="${escapeAttribute(ogType || "website")}" />`],
+    [/<meta\s+property="og:url"\s+content="[^"]*"\s*\/?>/, `<meta property="og:url" content="${escapeAttribute(url)}" />`],
+    [/<meta\s+property="og:image"\s+content="[^"]*"\s*\/?>/, `<meta property="og:image" content="${escapeAttribute(image)}" />`],
+    [/<meta\s+property="og:image:alt"\s+content="[^"]*"\s*\/?>/, `<meta property="og:image:alt" content="${escapeAttribute(imageAlt)}" />`],
   ];
 
   let nextHtml = html;
@@ -65,29 +65,29 @@ function replaceHeadMeta(html, { title, description, url, image, imageAlt, canon
   });
 
   if (typeof robots === "string" && robots) {
-    if (/<meta name="robots" content="[^"]*" \/>/.test(nextHtml)) {
+    if (/<meta\s+name="robots"\s+content="[^"]*"\s*\/?>/.test(nextHtml)) {
       nextHtml = nextHtml.replace(
-        /<meta name="robots" content="[^"]*" \/>/,
+        /<meta\s+name="robots"\s+content="[^"]*"\s*\/?>/,
         `<meta name="robots" content="${escapeAttribute(robots)}" />`,
       );
     } else {
       nextHtml = nextHtml.replace(
-        /(<meta property="og:image:alt" content="[^"]*" \/>)/,
+        /(<meta\s+property="og:image:alt"\s+content="[^"]*"\s*\/?>)/,
         `$1\n    <meta name="robots" content="${escapeAttribute(robots)}" />`,
       );
     }
   } else {
-    nextHtml = nextHtml.replace(/\s*<meta name="robots" content="[^"]*" \/>/, "");
+    nextHtml = nextHtml.replace(/\s*<meta\s+name="robots"\s+content="[^"]*"\s*\/?>/, "");
   }
 
-  if (/<link rel="canonical" href="[^"]*" \/>/.test(nextHtml)) {
+  if (/<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/.test(nextHtml)) {
     nextHtml = nextHtml.replace(
-      /<link rel="canonical" href="[^"]*" \/>/,
+      /<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/,
       `<link rel="canonical" href="${escapeAttribute(canonicalUrl)}" />`,
     );
   } else {
     nextHtml = nextHtml.replace(
-      /(<meta property="og:image:alt" content="[^"]*" \/>)/,
+      /(<meta\s+property="og:image:alt"\s+content="[^"]*"\s*\/?>)/,
       `$1\n    <link rel="canonical" href="${escapeAttribute(canonicalUrl)}" />`,
     );
   }
@@ -201,8 +201,8 @@ function renderFallbackPage(html, fallback, { url, canonicalUrl, image, imageAlt
     message: fallback.message,
     linkText: fallback.linkText,
   });
-  nextHtml = nextHtml.replace('<div id="postSkeleton">', '<div id="postSkeleton" style="display: none;">');
-  nextHtml = nextHtml.replace('id="postEmpty" style="display: none;"', 'id="postEmpty" style="display: flex;"');
+  nextHtml = nextHtml.replace(/<div\s+id="postSkeleton"(?=[\s>])/, '<div id="postSkeleton" style="display: none;"');
+  nextHtml = nextHtml.replace(/id="postEmpty"\s+style="display:\s*none;?"/, 'id="postEmpty" style="display: flex;"');
   return nextHtml;
 }
 
@@ -246,9 +246,9 @@ module.exports = async function handler(req, res) {
       ogType: "article",
     });
 
-    html = html.replace('<div id="postSkeleton">', '<div id="postSkeleton" style="display: none;">');
+    html = html.replace(/<div\s+id="postSkeleton"(?=[\s>])/, '<div id="postSkeleton" style="display: none;"');
     html = html.replace(
-      '<div id="postContent" style="display: none;"></div>',
+      /<div\s+id="postContent"\s+style="display:\s*none;?">\s*<\/div>/,
       `<div id="postContent" style="display: block;">${buildServerRenderedArticle(post)}</div>`,
     );
     html = injectInitialPostData(html, post);

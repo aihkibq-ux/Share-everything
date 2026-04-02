@@ -1,3 +1,12 @@
+/**
+ * notion-server.js — 服务端 Notion 数据获取与渲染
+ *
+ * ⚠️ 以下逻辑与客户端 js/notion-api.js 共享（无构建步骤，暂以复制方式维护）：
+ *   - NOTION_ANNOTATION_STYLES, CATEGORY_COLORS, gradientForCategory
+ *   - escapeHtml, sanitizeUrl, richTextToHtml, richTextToPlain
+ *   - mapNotionPage, mapNotionBlock, renderBlocks, renderBlock, renderListItem
+ * 修改任何上述函数时，务必同步更新 js/notion-api.js 中的对应版本。
+ */
 const NOTION_BASE = "https://api.notion.com/v1";
 const NOTION_VERSION = "2022-06-28";
 const DEFAULT_DATABASE_ID = "32485b780a2580eaa67ecf051676d693";

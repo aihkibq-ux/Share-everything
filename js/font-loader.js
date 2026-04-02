@@ -19,7 +19,14 @@
 
     link.dataset.fontsPrepared = "true";
 
-    const finish = () => activateFontLink(link);
+    let fallbackTimer = null;
+    const finish = () => {
+      if (fallbackTimer != null) {
+        window.clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+      activateFontLink(link);
+    };
     if (link.sheet) {
       finish();
       return;
@@ -27,7 +34,7 @@
 
     link.addEventListener("load", finish, { once: true });
     link.addEventListener("error", finish, { once: true });
-    window.setTimeout(finish, FALLBACK_DELAY);
+    fallbackTimer = window.setTimeout(finish, FALLBACK_DELAY);
   }
 
   function initDeferredFonts() {

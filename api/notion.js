@@ -19,6 +19,10 @@ const RATE_LIMIT_MAX_REQUESTS = Number(process.env.RATE_LIMIT_MAX_REQUESTS || 12
 const MAX_RATE_LIMIT_ENTRIES = Number(process.env.RATE_LIMIT_MAX_ENTRIES || 10_000);
 const NOTION_ID_PATTERN = /^[0-9a-fA-F-]{32,36}$/;
 const BLOCK_CHILDREN_QUERY_PARAMS = new Set(["page_size", "start_cursor"]);
+// ⚠️ 内存速率限制在 Serverless 环境中局限性较大：
+// - 冷启动后状态丢失
+// - 多实例间不共享
+// 如需严格限流，请使用 Vercel KV / Upstash Redis 等分布式方案。
 const rateLimitStore = new Map();
 
 function getNotionToken() {
@@ -173,7 +177,8 @@ function buildAllowedQueryString(query, pathKind) {
 
   for (const [key, value] of Object.entries(query)) {
     if (key === "path") continue;
-    if (!allowedParams?.has(key)) return null;
+    if (!allowedParams) continue; // No whitelist for this path type → ignore extra params
+    if (!allowedParams.has(key)) return null;
 
     const values = Array.isArray(value) ? value : [value];
     for (const item of values) {

@@ -1,6 +1,11 @@
 /**
  * Cloudflare Worker — Notion API 代理（带边缘缓存）
  *
+ * ⚠️ 备用/参考实现。生产环境使用 Vercel Serverless（api/notion.js）。
+ * 保留此文件以备大陆 Vercel 不可达时切换使用。
+ * 注意：此文件与 api/notion.js 有重复的路径白名单/CORS 逻辑，
+ * 若修改代理规则请同步更新两处。
+ *
  * 部署方式：
  * 1. 在 Cloudflare Dashboard 创建一个 Worker
  * 2. 设置环境变量：
