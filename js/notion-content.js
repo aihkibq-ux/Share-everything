@@ -776,11 +776,11 @@
       case "synced_block":
         return childrenHtml;
       case "heading_1":
-        return renderHeadingBlock("h1", block, childrenHtml);
-      case "heading_2":
         return renderHeadingBlock("h2", block, childrenHtml);
-      case "heading_3":
+      case "heading_2":
         return renderHeadingBlock("h3", block, childrenHtml);
+      case "heading_3":
+        return renderHeadingBlock("h4", block, childrenHtml);
       case "paragraph":
         return block.text ? `<p>${block.text}</p>${childrenHtml}` : childrenHtml;
       case "code":

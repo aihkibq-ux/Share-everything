@@ -142,11 +142,11 @@ export const notionBlockFixtures = Object.freeze([
       Object.freeze({ blockIndex: 2, path: "anchorId", equals: "heading-details" }),
     ]),
     expectedHtmlIncludes: Object.freeze([
-      '<h1 id="heading-overview">Overview</h1>',
+      '<h2 id="heading-overview">Overview</h2>',
       '<nav class="post-table-of-contents" aria-label="Table of contents">',
       'href="#heading-overview">Overview</a>',
       'class="post-table-of-contents-item level-2"><a href="#heading-details">Details</a>',
-      '<h2 id="heading-details">Details</h2>',
+      '<h3 id="heading-details">Details</h3>',
     ]),
     expectedHtmlExcludes: Object.freeze([
       "Unsupported block:",

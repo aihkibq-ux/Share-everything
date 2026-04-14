@@ -13,10 +13,13 @@ const {
 const NOTION_BASE = "https://api.notion.com/v1";
 const NOTION_VERSION = "2022-06-28";
 const MAX_BLOCK_RECURSION_DEPTH = 10;
+const MAX_PAGINATION_ROUNDS = 50;
 const DEFAULT_SITE_ORIGIN = process.env.SITE_URL || "https://www.0000068.xyz";
 const DEFAULT_POST_PAGE_SIZE = 9;
 const DATABASE_METADATA_TTL_MS = Number(process.env.DATABASE_METADATA_TTL_MS || 300_000);
-const PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS = Number(process.env.PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS || 15_000);
+const PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS = Number(process.env.PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS || 120_000);
+const PUBLIC_POST_CACHE_TTL_MS = Number(process.env.PUBLIC_POST_CACHE_TTL_MS || 60_000);
+const PUBLIC_POST_CACHE_MAX_ENTRIES = 20;
 const NOTION_REQUEST_TIMEOUT_MS = Number(process.env.NOTION_REQUEST_TIMEOUT_MS || 12_000);
 const NOTION_BLOCK_CHILD_CONCURRENCY = Number(process.env.NOTION_BLOCK_CHILD_CONCURRENCY || 4);
 const DEFAULT_PUBLIC_STATUS_VALUES = ["Published", "Public", "Live", "公开", "已发布"];
@@ -61,6 +64,7 @@ let databaseMetadataCache = null;
 let databaseMetadataPromise = null;
 let publicPageSummaryCache = null;
 let publicPageSummaryPromise = null;
+const publicPostCache = new Map();
 
 function readCsvEnv(names, defaults = []) {
   const keys = Array.isArray(names) ? names : [names];
@@ -622,9 +626,15 @@ async function queryDatabasePages({ filter, schema = null } = {}) {
   const databaseId = getDatabaseId();
   const pages = [];
   let startCursor = null;
+  let rounds = 0;
   const sorts = buildDatabaseSorts(schema);
 
   do {
+    if (++rounds > MAX_PAGINATION_ROUNDS) {
+      console.warn(`Database query pagination exceeded ${MAX_PAGINATION_ROUNDS} rounds, stopping.`);
+      break;
+    }
+
     const body = {
       page_size: 100,
     };
@@ -839,8 +849,14 @@ async function fetchAllBlockChildren(blockId, depth = 0) {
 
   const blocks = [];
   let startCursor = null;
+  let rounds = 0;
 
   do {
+    if (++rounds > MAX_PAGINATION_ROUNDS) {
+      console.warn(`Block children pagination exceeded ${MAX_PAGINATION_ROUNDS} rounds for block: ${blockId}`);
+      break;
+    }
+
     const query = new URLSearchParams({ page_size: "100" });
     if (startCursor) {
       query.set("start_cursor", startCursor);
@@ -885,7 +901,39 @@ function renderPostContent(postOrBlocks, { baseOrigin = getSiteOrigin() } = {}) 
   return renderBlocks(content, { baseOrigin });
 }
 
+function getCachedPublicPost(pageId) {
+  const entry = publicPostCache.get(pageId);
+  if (!entry) return null;
+
+  if (Date.now() >= entry.expiresAt) {
+    publicPostCache.delete(pageId);
+    return null;
+  }
+
+  return entry.data;
+}
+
+function cachePublicPost(pageId, data) {
+  if (publicPostCache.has(pageId)) {
+    publicPostCache.delete(pageId);
+  }
+
+  publicPostCache.set(pageId, {
+    data,
+    expiresAt: Date.now() + PUBLIC_POST_CACHE_TTL_MS,
+  });
+
+  while (publicPostCache.size > PUBLIC_POST_CACHE_MAX_ENTRIES) {
+    const oldestKey = publicPostCache.keys().next().value;
+    if (!oldestKey) break;
+    publicPostCache.delete(oldestKey);
+  }
+}
+
 async function fetchPublicPost(pageId) {
+  const cached = getCachedPublicPost(pageId);
+  if (cached) return cached;
+
   const [page, metadata] = await Promise.all([
     requestNotionJson(`/pages/${pageId}`),
     getDatabaseMetadata(),
@@ -894,7 +942,9 @@ async function fetchPublicPost(pageId) {
     schema: metadata.contentSchema,
   });
   const blocks = await fetchAllBlockChildren(pageId);
-  return buildPostPayload(summary, blocks);
+  const post = buildPostPayload(summary, blocks);
+  cachePublicPost(pageId, post);
+  return post;
 }
 
 function buildPostUrl(pageId) {

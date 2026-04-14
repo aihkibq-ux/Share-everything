@@ -855,8 +855,8 @@ assert.ok(
 expectIncludes(apiPostJs, 'upsertStructuredDataScript(html, "post-article"', "article HTML route should emit structured data");
 expectIncludes(apiPostJs, 'id="initialPostData"', "article HTML route should emit initial post data");
 expectIncludes(apiPostJs, "buildUnavailableContent", "article HTML route should distinguish upstream failures from not-found routes");
-expectIncludes(apiPostJs, 'req.method !== "GET"', "article HTML route should reject non-GET requests explicitly");
-expectIncludes(apiPostJs, 'res.setHeader("Allow", "GET");', "article HTML route should advertise the supported method on 405 responses");
+expectIncludes(apiPostJs, 'req.method !== "GET" && req.method !== "HEAD"', "article HTML route should reject non-GET/HEAD requests explicitly");
+expectIncludes(apiPostJs, 'res.setHeader("Allow", "GET, HEAD");', "article HTML route should advertise the supported methods on 405 responses");
 expectIncludes(apiPostJs, "getPublicPostErrorStatus", "article HTML route should reuse shared public-post error mapping");
 expectIncludes(apiPostJs, "fetchPublicPost", "article HTML route should only render posts from the public blog set");
 expectIncludes(apiPostJs, "renderPostArticle(post, { renderedContent, baseOrigin: siteOrigin })", "article HTML route should reuse the shared article-shell renderer for SSR");
