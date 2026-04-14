@@ -1,0 +1,112 @@
+function readQueryString(value) {
+  const rawValue = Array.isArray(value) ? value[0] : value;
+  return typeof rawValue === "string" ? rawValue.trim() : "";
+}
+
+function readPositiveInteger(value, fallback = 1) {
+  const parsed = Number.parseInt(readQueryString(value), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function readRetryAfter(error) {
+  const rawValue = Array.isArray(error?.retryAfter) ? error.retryAfter[0] : error?.retryAfter;
+  return typeof rawValue === "string" ? rawValue.trim() : "";
+}
+
+function applyPublicErrorHeaders(res, error) {
+  const retryAfter = readRetryAfter(error);
+  if (retryAfter) {
+    res.setHeader("Retry-After", retryAfter);
+  }
+}
+
+function readErrorDetail(error) {
+  const rawValue = Array.isArray(error?.detail) ? error.detail[0] : error?.detail;
+  if (typeof rawValue === "string" && rawValue.trim()) {
+    return rawValue.trim();
+  }
+
+  return typeof error?.message === "string" ? error.message.trim() : "";
+}
+
+function serializePublicError(error, fallbackError) {
+  const payload = {
+    error: fallbackError,
+  };
+  const detail = readErrorDetail(error);
+
+  if (typeof error?.code === "string" && error.code) {
+    payload.code = error.code;
+  }
+
+  if (typeof error?.notionCode === "string" && error.notionCode) {
+    payload.notionCode = error.notionCode;
+  }
+
+  if (detail) {
+    payload.detail = detail;
+  }
+
+  return payload;
+}
+
+function isPublicContentConfigError(error) {
+  return (
+    error?.code === "notion_config_error" ||
+    error?.code === "notion_public_config_error"
+  );
+}
+
+function isUpstreamAuthOrPermissionError(error) {
+  const status = Number(error?.status);
+  return (
+    status === 401 ||
+    status === 403 ||
+    error?.notionCode === "unauthorized" ||
+    error?.notionCode === "restricted_resource"
+  );
+}
+
+function getPublicContentErrorStatus(error) {
+  const status = Number(error?.status);
+
+  if ((status === 500 && isPublicContentConfigError(error)) || isUpstreamAuthOrPermissionError(error)) {
+    return 500;
+  }
+
+  if (status === 429 || error?.notionCode === "rate_limited") {
+    return 429;
+  }
+
+  if (status === 504 || error?.code === "notion_timeout_error") {
+    return 504;
+  }
+
+  return 502;
+}
+
+function isMissingPublicPostError(error) {
+  const status = Number(error?.status);
+  return (
+    status === 404 ||
+    (status === 400 && error?.notionCode === "validation_error") ||
+    error?.code === "notion_page_not_public"
+  );
+}
+
+function getPublicPostErrorStatus(error) {
+  if (isMissingPublicPostError(error)) {
+    return 404;
+  }
+
+  return getPublicContentErrorStatus(error);
+}
+
+module.exports = {
+  applyPublicErrorHeaders,
+  getPublicContentErrorStatus,
+  getPublicPostErrorStatus,
+  readPositiveInteger,
+  readQueryString,
+  serializePublicError,
+};

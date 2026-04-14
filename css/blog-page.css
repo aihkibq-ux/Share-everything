@@ -1,0 +1,23 @@
+@supports (content-visibility: auto) {
+  .blog-card {
+    content-visibility: auto;
+    contain-intrinsic-size: 360px;
+  }
+}
+
+.empty-state-action {
+  margin-top: 18px;
+  padding: 10px 18px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+  transition: all 0.3s var(--transition-smooth);
+}
+
+.empty-state-action:hover {
+  border-color: var(--accent-cyan);
+  background: rgba(0, 229, 255, 0.12);
+}
