@@ -1,6 +1,6 @@
 # Share Everything — 代码审查问题汇总
 
-> 审查日期：2026-04-14 | 涵盖范围：全部前端、后端、API、配置、测试、文档 | 文档复核更新：2026-04-15
+> 审查日期：2026-04-14 | 涵盖范围：全部前端、后端、API、配置、测试、文档 | 文档复核更新：2026-04-17
 
 ---
 
@@ -27,10 +27,10 @@
 | 属性 | 值 |
 |-----|---|
 | 类型 | 可扩展性 / Notion API 压力 |
-| 状态 | 已修复：`fetchPublicPost` 已增加 60s LRU 内存缓存（20 条上限） |
+| 状态 | 已进一步优化：`fetchPublicPost` 已增加 60s LRU 内存缓存（20 条上限）+ 同文并发请求去重 |
 | 影响文件 | [notion-server.js](file:///c:/Users/x/Documents/anti1/server/notion-server.js) |
 
-`fetchPublicPost` 每次调用：请求 `/pages/:id` → 验证公开策略 → `fetchAllBlockChildren` 递归拉 block 树（最深 10 层）。现已增加 60s 内存缓存，同一文章短时间内多次访问不再重复请求 Notion API。
+`fetchPublicPost` 每次调用：请求 `/pages/:id` → 验证公开策略 → `fetchAllBlockChildren` 递归拉 block 树（最深 10 层）。现已增加 60s 内存缓存，同一文章短时间内多次访问不再重复请求 Notion API；同时又补上了进行中 Promise 去重，避免缓存未命中时同一篇文章被并发请求重复拉取。
 
 ---
 
@@ -101,11 +101,20 @@
 | 属性 | 值 |
 |-----|---|
 | 类型 | 测试可维护性 |
+| 状态 | 已缓解：已补充行为断言覆盖单篇文章并发去重与失败后重试，仍有部分源码字符串断言待继续迁移 |
 | 影响文件 | [smoke-check.mjs:445](file:///c:/Users/x/Documents/anti1/scripts/smoke-check.mjs#L445)、[L788](file:///c:/Users/x/Documents/anti1/scripts/smoke-check.mjs#L788)、[L855](file:///c:/Users/x/Documents/anti1/scripts/smoke-check.mjs#L855) |
 
 大量 `expectIncludes(sourceCode, "某段字符串")` 断言测的是实现细节而非行为。重构变量名、提取函数、精简代码时会产生大量测试噪音。
 
 **修复方向：** 逐步迁移为行为断言（调用函数验证输出），低价值断言逐步移除。
+
+---
+
+## 第三轮修复（2026-04-17）
+
+- `fetchPublicPost` 增加同文并发请求去重，缓存未命中时只发起一次上游 Notion 页面与 block 树请求。
+- 新增失败后重试行为保障：进行中的失败 Promise 会在 settle 后清理，后续请求可重新拉取。
+- `smoke-check` 新增行为断言，直接验证“并发复用”和“失败后恢复”，不再只依赖源码字符串。
 
 ---
 

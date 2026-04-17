@@ -128,7 +128,7 @@
 │  └─ post-page.css           详情页补充
 │
 └─ scripts/
-   ├─ smoke-check.mjs         回归检查
+   ├─ smoke-check.mjs         回归检查（含 SSR / block fixture / 并发去重行为断言）
    └─ fixtures/
       └─ notion-block-fixtures.mjs
 ```
@@ -167,7 +167,7 @@ blog-page.js → NotionAPI.queryPosts()
 浏览器 → /posts/:id
   → Vercel 重写 → /api/post?id=:id
     → api/post.js
-      → fetchPublicPost()（带 60s LRU 缓存）
+      → fetchPublicPost()（带 60s LRU 缓存 + 同文并发请求去重）
         → 请求 Notion /pages/:id + 递归拉 block 树
       → 注入 post.html 模板
       → 输出完整 HTML（SEO + structured data + 正文）
@@ -239,6 +239,7 @@ blog-page.js → NotionAPI.queryPosts()
 | 数据库 metadata + schema | 内存 | 5 分钟 | 1 条 |
 | 公开文章列表摘要 | 内存 | 2 分钟 | 1 条 |
 | 单篇文章（摘要 + blocks） | 内存 LRU | 60 秒 | 20 条 |
+| 单篇文章进行中请求 | 内存 Promise Map | 请求生命周期 | 同 cache key 1 条 |
 
 **安全机制**：
 
@@ -349,15 +350,31 @@ blog-page.js → NotionAPI.queryPosts()
 | 6 | 移除无用 `favicon.ico` 缓存规则 | `vercel.json` |
 | 7 | 删除空 `worker/` 残留目录 | 项目根目录 |
 
+### 第三轮修复（2026-04-17）
+
+| # | 修复内容 | 影响文件 |
+|---|---------|---------|
+| 1 | `fetchPublicPost` 增加同文并发请求去重，避免缓存未命中时重复请求同一篇 Notion 页面与 block 树 | `server/notion-server.js` |
+| 2 | 失败的进行中请求会在 settle 后清理，后续重试不会被已失败 Promise 污染 | `server/notion-server.js` |
+| 3 | `smoke-check` 新增行为断言，覆盖单篇文章并发复用与失败后重试恢复 | `scripts/smoke-check.mjs` |
+| 4 | 架构文档与代码审查文档同步更新到当前实现 | `SITE_ARCHITECTURE.md`、`CODE_REVIEW.md` |
+
 ### 待后续迭代
 
 - `common.js` 按职责拆分（router / seo / page-runtime / site-utils）
 - `escapeHtml` 三处重复定义合并
-- 测试断言迁移为行为断言
+- 继续将低价值源码字符串断言迁移为行为断言
 - 移动端粒子系统按设备能力裁剪
 - CSS 按页面拆分关键样式
 
 ## 10. 验证
+
+当前 `smoke-check` 已覆盖：
+
+- 模板与路由基础结构
+- Notion block fixture 渲染
+- SSR 注入安全性
+- 单篇文章并发请求去重与失败后重试恢复
 
 ```bash
 npm run check

@@ -19,7 +19,7 @@ function checkSyntax(relativePath) {
   });
 }
 
-function loadCommonJsModule(relativePath, exportedNames = []) {
+function loadCommonJsModule(relativePath, exportedNames = [], sandboxOverrides = {}) {
   const filename = fileURLToPath(new URL(relativePath, root));
   const module = { exports: {} };
   const appendedExports = exportedNames.length > 0
@@ -41,6 +41,7 @@ function loadCommonJsModule(relativePath, exportedNames = []) {
     fetch,
     setTimeout,
     clearTimeout,
+    ...sandboxOverrides,
   }, {
     filename,
   });
@@ -177,6 +178,38 @@ function createStorageMock(initialEntries = {}) {
     },
     removeItem(key) {
       store.delete(key);
+    },
+  };
+}
+
+function createHeadersMock(initialEntries = {}) {
+  const headers = new Map(
+    Object.entries(initialEntries).map(([key, value]) => [String(key).toLowerCase(), String(value)]),
+  );
+
+  return {
+    get(name) {
+      return headers.get(String(name).toLowerCase()) || null;
+    },
+  };
+}
+
+function createJsonResponse(payload, { status = 200, headers = {} } = {}) {
+  const serializedPayload = typeof payload === "string"
+    ? payload
+    : JSON.stringify(payload);
+
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: createHeadersMock(headers),
+    async json() {
+      return typeof payload === "string"
+        ? JSON.parse(payload)
+        : payload;
+    },
+    async text() {
+      return serializedPayload;
     },
   };
 }
@@ -1158,6 +1191,194 @@ assert.equal(
   serverNotionHelpers.renderPostContent(builtPostPayload, { baseOrigin: "https://example.com" }),
   "<p>Server rendered body</p>",
   "server notion layer should render post HTML on demand from structured content",
+);
+const dedupedFetchCounts = {
+  database: 0,
+  page: 0,
+  blocks: 0,
+};
+const dedupedServerNotion = loadCommonJsModule("server/notion-server.js", [], {
+  process: {
+    env: {
+      ...process.env,
+      NOTION_TOKEN: "test-token",
+      NOTION_DATABASE_ID: "test-database",
+      SITE_URL: "https://example.com",
+    },
+  },
+  fetch: async (url) => {
+    const requestUrl = String(url);
+
+    if (requestUrl.endsWith("/databases/test-database")) {
+      dedupedFetchCounts.database += 1;
+      return createJsonResponse({
+        properties: {
+          Name: { id: "title", name: "Name", type: "title" },
+        },
+      });
+    }
+
+    if (requestUrl.endsWith("/pages/post-1")) {
+      dedupedFetchCounts.page += 1;
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      return createJsonResponse({
+        id: "post-1",
+        parent: { database_id: "test-database" },
+        properties: {
+          Name: {
+            id: "title",
+            name: "Name",
+            type: "title",
+            title: [{ plain_text: "Deduped title" }],
+          },
+        },
+      });
+    }
+
+    if (requestUrl.includes("/blocks/post-1/children?")) {
+      dedupedFetchCounts.blocks += 1;
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      return createJsonResponse({
+        results: [{
+          id: "block-1",
+          type: "paragraph",
+          has_children: false,
+          paragraph: {
+            rich_text: [{ plain_text: "Deduped body" }],
+          },
+        }],
+        has_more: false,
+        next_cursor: null,
+      });
+    }
+
+    throw new Error(`Unexpected Notion request during dedupe test: ${requestUrl}`);
+  },
+});
+const [dedupedPostA, dedupedPostB] = await Promise.all([
+  dedupedServerNotion.fetchPublicPost("post-1"),
+  dedupedServerNotion.fetchPublicPost("post-1"),
+]);
+assert.strictEqual(
+  dedupedPostA,
+  dedupedPostB,
+  "server notion layer should resolve concurrent post-detail requests through the same in-flight promise",
+);
+assert.equal(
+  dedupedFetchCounts.database,
+  1,
+  "server notion layer should still reuse the shared database metadata lookup while coalescing concurrent post-detail requests",
+);
+assert.equal(
+  dedupedFetchCounts.page,
+  1,
+  "server notion layer should fetch the Notion page only once for concurrent requests to the same post",
+);
+assert.equal(
+  dedupedFetchCounts.blocks,
+  1,
+  "server notion layer should fetch the Notion block tree only once for concurrent requests to the same post",
+);
+assert.equal(
+  dedupedPostA.content?.[0]?.text,
+  "Deduped body",
+  "server notion layer should still return the mapped block content after coalescing concurrent requests",
+);
+const retryFetchCounts = {
+  database: 0,
+  page: 0,
+  blocks: 0,
+};
+let shouldFailNextRetryPageRequest = true;
+const retryServerNotion = loadCommonJsModule("server/notion-server.js", [], {
+  process: {
+    env: {
+      ...process.env,
+      NOTION_TOKEN: "test-token",
+      NOTION_DATABASE_ID: "retry-database",
+      SITE_URL: "https://example.com",
+    },
+  },
+  fetch: async (url) => {
+    const requestUrl = String(url);
+
+    if (requestUrl.endsWith("/databases/retry-database")) {
+      retryFetchCounts.database += 1;
+      return createJsonResponse({
+        properties: {
+          Name: { id: "title", name: "Name", type: "title" },
+        },
+      });
+    }
+
+    if (requestUrl.endsWith("/pages/retry-post")) {
+      retryFetchCounts.page += 1;
+      if (shouldFailNextRetryPageRequest) {
+        shouldFailNextRetryPageRequest = false;
+        return createJsonResponse({
+          message: "temporary upstream failure",
+          code: "internal_server_error",
+        }, {
+          status: 500,
+        });
+      }
+
+      return createJsonResponse({
+        id: "retry-post",
+        parent: { database_id: "retry-database" },
+        properties: {
+          Name: {
+            id: "title",
+            name: "Name",
+            type: "title",
+            title: [{ plain_text: "Recovered title" }],
+          },
+        },
+      });
+    }
+
+    if (requestUrl.includes("/blocks/retry-post/children?")) {
+      retryFetchCounts.blocks += 1;
+      return createJsonResponse({
+        results: [{
+          id: "retry-block-1",
+          type: "paragraph",
+          has_children: false,
+          paragraph: {
+            rich_text: [{ plain_text: "Recovered body" }],
+          },
+        }],
+        has_more: false,
+        next_cursor: null,
+      });
+    }
+
+    throw new Error(`Unexpected Notion request during retry test: ${requestUrl}`);
+  },
+});
+await assert.rejects(
+  () => retryServerNotion.fetchPublicPost("retry-post"),
+  (error) => {
+    assert.equal(error?.status, 500);
+    return true;
+  },
+  "server notion layer should surface the original upstream failure for the first failed post-detail request",
+);
+const recoveredRetryPost = await retryServerNotion.fetchPublicPost("retry-post");
+assert.equal(
+  retryFetchCounts.page,
+  2,
+  "server notion layer should clear failed in-flight post-detail requests so the next retry can re-fetch the page",
+);
+assert.equal(
+  retryFetchCounts.blocks,
+  1,
+  "server notion layer should only fetch block children once after the retry successfully loads the page metadata",
+);
+assert.equal(
+  recoveredRetryPost.title,
+  "Recovered title",
+  "server notion layer should recover cleanly after a failed in-flight post-detail request",
 );
 assert.ok(
   !serverNotionJs.includes("务必同步更新 js/notion-api.js"),

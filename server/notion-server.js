@@ -65,6 +65,7 @@ let databaseMetadataPromise = null;
 let publicPageSummaryCache = null;
 let publicPageSummaryPromise = null;
 const publicPostCache = new Map();
+const pendingPublicPostRequests = new Map();
 
 function readCsvEnv(names, defaults = []) {
   const keys = Array.isArray(names) ? names : [names];
@@ -901,24 +902,33 @@ function renderPostContent(postOrBlocks, { baseOrigin = getSiteOrigin() } = {}) 
   return renderBlocks(content, { baseOrigin });
 }
 
-function getCachedPublicPost(pageId) {
-  const entry = publicPostCache.get(pageId);
+function getPublicPostCacheKey(pageId) {
+  const normalizedId = normalizeNotionId(pageId);
+  if (normalizedId) {
+    return normalizedId;
+  }
+
+  return typeof pageId === "string" ? pageId.trim() : String(pageId ?? "");
+}
+
+function getCachedPublicPost(cacheKey) {
+  const entry = publicPostCache.get(cacheKey);
   if (!entry) return null;
 
   if (Date.now() >= entry.expiresAt) {
-    publicPostCache.delete(pageId);
+    publicPostCache.delete(cacheKey);
     return null;
   }
 
   return entry.data;
 }
 
-function cachePublicPost(pageId, data) {
-  if (publicPostCache.has(pageId)) {
-    publicPostCache.delete(pageId);
+function cachePublicPost(cacheKey, data) {
+  if (publicPostCache.has(cacheKey)) {
+    publicPostCache.delete(cacheKey);
   }
 
-  publicPostCache.set(pageId, {
+  publicPostCache.set(cacheKey, {
     data,
     expiresAt: Date.now() + PUBLIC_POST_CACHE_TTL_MS,
   });
@@ -930,21 +940,51 @@ function cachePublicPost(pageId, data) {
   }
 }
 
+function getPendingPublicPostRequest(cacheKey) {
+  return pendingPublicPostRequests.get(cacheKey) || null;
+}
+
+function withPendingPublicPostRequest(cacheKey, loader) {
+  const existing = getPendingPublicPostRequest(cacheKey);
+  if (existing) {
+    return existing;
+  }
+
+  const pending = Promise.resolve()
+    .then(loader)
+    .finally(() => {
+      if (pendingPublicPostRequests.get(cacheKey) === pending) {
+        pendingPublicPostRequests.delete(cacheKey);
+      }
+    });
+
+  pendingPublicPostRequests.set(cacheKey, pending);
+  return pending;
+}
+
 async function fetchPublicPost(pageId) {
-  const cached = getCachedPublicPost(pageId);
+  const cacheKey = getPublicPostCacheKey(pageId);
+  const cached = getCachedPublicPost(cacheKey);
   if (cached) return cached;
 
-  const [page, metadata] = await Promise.all([
-    requestNotionJson(`/pages/${pageId}`),
-    getDatabaseMetadata(),
-  ]);
-  const summary = mapNotionPage(assertPublicPage(page, metadata.publicAccessPolicy), {
-    schema: metadata.contentSchema,
+  return withPendingPublicPostRequest(cacheKey, async () => {
+    const cachedDuringWait = getCachedPublicPost(cacheKey);
+    if (cachedDuringWait) {
+      return cachedDuringWait;
+    }
+
+    const [page, metadata] = await Promise.all([
+      requestNotionJson(`/pages/${pageId}`),
+      getDatabaseMetadata(),
+    ]);
+    const summary = mapNotionPage(assertPublicPage(page, metadata.publicAccessPolicy), {
+      schema: metadata.contentSchema,
+    });
+    const blocks = await fetchAllBlockChildren(pageId);
+    const post = buildPostPayload(summary, blocks);
+    cachePublicPost(cacheKey, post);
+    return post;
   });
-  const blocks = await fetchAllBlockChildren(pageId);
-  const post = buildPostPayload(summary, blocks);
-  cachePublicPost(pageId, post);
-  return post;
 }
 
 function buildPostUrl(pageId) {
