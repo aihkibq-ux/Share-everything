@@ -45,8 +45,9 @@
     ].join(" ").toLowerCase().trim().replace(/\s+/g, " ");
   const HISTORY_MODE_REPLACE = "replace";
   const HISTORY_MODE_PUSH = "push";
+  const BOOKMARK_HASH_PREFIX = "#bookmarks";
 
-  function normalizePageNumber(value, fallback = 1) {
+  function normalizeBookmarkListingPage(value, fallback = 1) {
     const parsed = Number.parseInt(String(value ?? ""), 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }
@@ -54,7 +55,7 @@
   function buildBookmarkListingHashFallback({ search = "", page = 1 } = {}) {
     const params = new URLSearchParams();
     const normalizedSearch = typeof search === "string" ? search.trim() : "";
-    const normalizedPage = normalizePageNumber(page, 1);
+    const normalizedPage = normalizeBookmarkListingPage(page, 1);
 
     if (normalizedSearch) {
       params.set("search", normalizedSearch);
@@ -63,13 +64,21 @@
       params.set("page", String(normalizedPage));
     }
 
-    const queryString = params.toString();
-    return `#bookmarks${queryString ? `?${queryString}` : ""}`;
+    const hashQuery = params.toString();
+    return `${BOOKMARK_HASH_PREFIX}${hashQuery ? `?${hashQuery}` : ""}`;
+  }
+
+  function buildBookmarkListingUrlFallback({ search = "", page = 1, pathname = "/blog.html" } = {}) {
+    const resolvedPathname = typeof pathname === "string" && pathname.trim()
+      ? pathname.trim()
+      : "/blog.html";
+
+    return `${resolvedPathname}${buildBookmarkListingHashFallback({ search, page })}`;
   }
 
   function parseBookmarkListingHashFallback(hash = "") {
     const rawHash = typeof hash === "string" ? hash.trim() : "";
-    if (!rawHash.startsWith("#bookmarks")) {
+    if (!rawHash.startsWith(BOOKMARK_HASH_PREFIX)) {
       return {
         active: false,
         search: "",
@@ -78,9 +87,10 @@
       };
     }
 
-    const params = new URLSearchParams(rawHash.slice("#bookmarks".length).replace(/^\?/, ""));
+    const rawQuery = rawHash.slice(BOOKMARK_HASH_PREFIX.length).replace(/^\?/, "");
+    const params = new URLSearchParams(rawQuery);
     const search = (params.get("search") || "").trim();
-    const page = normalizePageNumber(params.get("page"), 1);
+    const page = normalizeBookmarkListingPage(params.get("page"), 1);
 
     return {
       active: true,
@@ -131,9 +141,7 @@
     const buildBookmarkListingUrl =
       typeof siteUtils.buildBookmarkListingUrl === "function"
         ? siteUtils.buildBookmarkListingUrl
-        : ({ search = "", page = 1, pathname = "/blog.html" } = {}) => (
-          `${pathname}${buildBookmarkListingHashFallback({ search, page })}`
-        );
+        : buildBookmarkListingUrlFallback;
     const bookmarkManager = window.BookmarkManager || {
       getAll: () => [],
       isBookmarked: () => false,

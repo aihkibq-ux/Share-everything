@@ -957,6 +957,62 @@
     return safeImageUrl;
   }
 
+  function buildArticleStructuredData(post, {
+    canonicalUrl,
+    defaultShareImageUrl,
+    imageUrl,
+    siteName = "Share Everything",
+    baseOrigin,
+  } = {}) {
+    const resolvedBaseOrigin = getBaseOrigin(baseOrigin);
+    const fallbackCanonicalPath =
+      typeof post?.id === "string" && post.id.trim()
+        ? `/posts/${encodeURIComponent(post.id.trim())}`
+        : "/post.html";
+    const resolvedCanonicalUrl = new URL(
+      typeof canonicalUrl === "string" && canonicalUrl.trim()
+        ? canonicalUrl.trim()
+        : fallbackCanonicalPath,
+      resolvedBaseOrigin,
+    ).href;
+    const resolvedDefaultShareImageUrl = resolveDisplayImageUrl(
+      defaultShareImageUrl,
+      resolvedBaseOrigin,
+    ) || new URL("favicon.png?v=2", resolvedBaseOrigin).href;
+    const resolvedImageUrl = resolveShareImageUrl(
+      typeof imageUrl === "string" && imageUrl.trim() ? imageUrl.trim() : post?.coverImage,
+      resolvedDefaultShareImageUrl,
+      resolvedBaseOrigin,
+    );
+    const normalizedTags = normalizePostTags(post?.tags);
+
+    return {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      headline: post?.title || siteName,
+      description: post?.excerpt || post?.title || siteName,
+      articleSection: post?.category || undefined,
+      keywords: normalizedTags.length > 0 ? normalizedTags.join(", ") : undefined,
+      datePublished: post?.date || undefined,
+      dateModified: post?.date || undefined,
+      image: [resolvedImageUrl],
+      mainEntityOfPage: resolvedCanonicalUrl,
+      url: resolvedCanonicalUrl,
+      author: {
+        "@type": "Organization",
+        name: siteName,
+      },
+      publisher: {
+        "@type": "Organization",
+        name: siteName,
+        logo: {
+          "@type": "ImageObject",
+          url: resolvedDefaultShareImageUrl,
+        },
+      },
+    };
+  }
+
   function getCategoryColor(category) {
     return CATEGORY_COLORS[category] || DEFAULT_CATEGORY_COLOR;
   }
@@ -968,6 +1024,7 @@
     DEFAULT_NOTION_CONTENT_PROPERTY_CANDIDATES,
     REMOTE_BLOG_CATEGORIES,
     SUPPORTED_BLOG_CATEGORIES,
+    buildArticleStructuredData,
     buildPostSearchText,
     escapeHtml,
     getBookmarkOnlyCategories,

@@ -1,5 +1,6 @@
 const {
   DEFAULT_NOTION_CONTENT_PROPERTY_CANDIDATES,
+  buildArticleStructuredData: buildSharedArticleStructuredData,
   buildPostSearchText,
   escapeHtml,
   getCategoryColor,
@@ -1084,34 +1085,13 @@ function buildPostUrl(pageId) {
 }
 
 function buildArticleStructuredData(post) {
-  const canonicalUrl = buildPostUrl(post.id);
-  const defaultShareImageUrl = `${getSiteOrigin()}/favicon.png?v=2`;
+  const siteOrigin = getSiteOrigin();
 
-  return {
-    "@context": "https://schema.org",
-    "@type": "Article",
-    headline: post.title,
-    description: post.excerpt || post.title,
-    articleSection: post.category || undefined,
-    keywords: Array.isArray(post.tags) && post.tags.length > 0 ? post.tags.join(", ") : undefined,
-    datePublished: post.date || undefined,
-    dateModified: post.date || undefined,
-    image: [resolveShareImageUrl(post.coverImage, defaultShareImageUrl, getSiteOrigin())],
-    mainEntityOfPage: canonicalUrl,
-    url: canonicalUrl,
-    author: {
-      "@type": "Organization",
-      name: "Share Everything",
-    },
-    publisher: {
-      "@type": "Organization",
-      name: "Share Everything",
-      logo: {
-        "@type": "ImageObject",
-        url: defaultShareImageUrl,
-      },
-    },
-  };
+  return buildSharedArticleStructuredData(post, {
+    canonicalUrl: buildPostUrl(post.id),
+    defaultShareImageUrl: `${siteOrigin}/favicon.png?v=2`,
+    baseOrigin: siteOrigin,
+  });
 }
 
 module.exports = {

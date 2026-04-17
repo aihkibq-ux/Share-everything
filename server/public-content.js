@@ -20,6 +20,17 @@ function applyPublicErrorHeaders(res, error) {
   }
 }
 
+function rejectUnsupportedReadMethod(req, res) {
+  if (req.method === "GET" || req.method === "HEAD") {
+    return false;
+  }
+
+  res.setHeader("Allow", "GET, HEAD");
+  res.setHeader("Cache-Control", "no-store");
+  res.status(405).json({ error: "Method not allowed" });
+  return true;
+}
+
 function readErrorDetail(error) {
   const rawValue = Array.isArray(error?.detail) ? error.detail[0] : error?.detail;
   if (typeof rawValue === "string" && rawValue.trim()) {
@@ -106,6 +117,7 @@ module.exports = {
   applyPublicErrorHeaders,
   getPublicContentErrorStatus,
   getPublicPostErrorStatus,
+  rejectUnsupportedReadMethod,
   readPositiveInteger,
   readQueryString,
   serializePublicError,

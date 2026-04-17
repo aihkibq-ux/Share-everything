@@ -14,6 +14,7 @@ const {
 const {
   applyPublicErrorHeaders,
   getPublicPostErrorStatus,
+  rejectUnsupportedReadMethod,
   readQueryString,
 } = require("../server/public-content");
 
@@ -189,10 +190,8 @@ function renderFallbackPage(html, fallback, { url, canonicalUrl, image, imageAlt
 }
 
 module.exports = async function handler(req, res) {
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    res.setHeader("Allow", "GET, HEAD");
-    res.setHeader("Cache-Control", "no-store");
-    return res.status(405).json({ error: "Method not allowed" });
+  if (rejectUnsupportedReadMethod(req, res)) {
+    return undefined;
   }
 
   const routeId = readQueryString(req.query.id);

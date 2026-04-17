@@ -267,6 +267,42 @@ function createJsonResponse(payload, { status = 200, headers = {} } = {}) {
   };
 }
 
+function createApiResponseRecorder() {
+  return {
+    statusCode: 200,
+    headers: new Map(),
+    jsonBody: null,
+    textBody: null,
+    ended: false,
+    setHeader(name, value) {
+      this.headers.set(String(name).toLowerCase(), String(value));
+      return this;
+    },
+    getHeader(name) {
+      return this.headers.get(String(name).toLowerCase());
+    },
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.jsonBody = payload;
+      this.ended = true;
+      return payload;
+    },
+    send(payload) {
+      this.textBody = payload;
+      this.ended = true;
+      return payload;
+    },
+    end(payload = "") {
+      this.textBody = payload;
+      this.ended = true;
+      return payload;
+    },
+  };
+}
+
 function loadBrowserScript(relativePath, overrides = {}) {
   const filename = fileURLToPath(new URL(relativePath, root));
   const windowObject = {
@@ -344,6 +380,60 @@ function normalizeHtml(source) {
     .replace(/>\s+</g, "><")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function createHeadMock() {
+  const nodes = [];
+
+  function matchesSelector(node, selector) {
+    const tagName = String(node?.tagName || "").toLowerCase();
+    if (selector === 'meta[name="description"]') {
+      return tagName === "meta" && node.getAttribute("name") === "description";
+    }
+    if (selector === 'meta[name="robots"]') {
+      return tagName === "meta" && node.getAttribute("name") === "robots";
+    }
+    if (selector === 'meta[property="og:title"]') {
+      return tagName === "meta" && node.getAttribute("property") === "og:title";
+    }
+    if (selector === 'meta[property="og:description"]') {
+      return tagName === "meta" && node.getAttribute("property") === "og:description";
+    }
+    if (selector === 'meta[property="og:type"]') {
+      return tagName === "meta" && node.getAttribute("property") === "og:type";
+    }
+    if (selector === 'meta[property="og:url"]') {
+      return tagName === "meta" && node.getAttribute("property") === "og:url";
+    }
+    if (selector === 'meta[property="og:image"]') {
+      return tagName === "meta" && node.getAttribute("property") === "og:image";
+    }
+    if (selector === 'meta[property="og:image:alt"]') {
+      return tagName === "meta" && node.getAttribute("property") === "og:image:alt";
+    }
+    if (selector === 'link[rel="canonical"]') {
+      return tagName === "link" && node.getAttribute("rel") === "canonical";
+    }
+
+    return false;
+  }
+
+  return {
+    appendChild(node) {
+      nodes.push(node);
+      node.remove = () => {
+        const index = nodes.indexOf(node);
+        if (index >= 0) {
+          nodes.splice(index, 1);
+        }
+      };
+      return node;
+    },
+    querySelector(selector) {
+      return nodes.find((node) => matchesSelector(node, selector)) || null;
+    },
+    nodes,
+  };
 }
 
 function getValueAtPath(target, path) {
@@ -432,6 +522,10 @@ function escapeRegex(value) {
   "js/notion-api.js",
   "js/post-page.js",
   "js/runtime-core.js",
+  "js/seo-meta.js",
+  "js/site-utils.js",
+  "js/spa-router.js",
+  "js/ui-effects.js",
   "api/notion.js",
   "api/posts-data.js",
   "api/post-data.js",
@@ -443,15 +537,19 @@ function escapeRegex(value) {
 const indexHtml = read("index.html");
 const blogHtml = read("blog.html");
 const postHtml = read("post.html");
+const gitAttributes = read(".gitattributes");
 const vercelJson = read("vercel.json");
-const commonJs = read("js/common.js");
+const styleCss = read("css/style.css");
+const blogPageCss = read("css/blog-page.css");
+const postPageCss = read("css/post-page.css");
 const runtimeCoreJs = read("js/runtime-core.js");
-const blogPageJs = read("js/blog-page.js");
+const spaRouterJs = read("js/spa-router.js");
 const bookmarkJs = read("js/bookmark.js");
 const indexPageJs = read("js/index-page.js");
 const notionContentJs = read("js/notion-content.js");
 const notionApiJs = read("js/notion-api.js");
 const postPageJs = read("js/post-page.js");
+const smokeCheckSource = read("scripts/smoke-check.mjs");
 const apiNotionJs = read("api/notion.js");
 const apiPostsDataJs = read("api/posts-data.js");
 const apiPostDataJs = read("api/post-data.js");
@@ -461,6 +559,10 @@ const publicContentJs = read("server/public-content.js");
 const serverNotionJs = read("server/notion-server.js");
 const notionContentHelpers = loadCommonJsModule("js/notion-content.js");
 const publicContentHelpers = loadCommonJsModule("server/public-content.js");
+const apiNotionHandler = loadCommonJsModule("api/notion.js");
+const apiPostHandler = loadCommonJsModule("api/post.js");
+const apiPostsDataHandler = loadCommonJsModule("api/posts-data.js");
+const apiPostDataHandler = loadCommonJsModule("api/post-data.js");
 const {
   __test: apiPostHelpers,
 } = loadCommonJsModule("api/post.js", [
@@ -474,6 +576,7 @@ const {
   __test: serverNotionHelpers,
 } = loadCommonJsModule("server/notion-server.js", [
   "buildPostPayload",
+  "buildArticleStructuredData",
   "buildContentSchema",
   "buildCategoryFilter",
   "buildDatabaseSorts",
@@ -502,12 +605,30 @@ expectNotIncludes(postHtml, 'href="/index.html"', "post.html should avoid the du
 expectNotIncludes(indexHtml, '?category=%E6%94%B6%E8%97%8F', "index.html should avoid exposing bookmark query routes to crawlers");
 expectNotIncludes(blogHtml, '?category=%E6%94%B6%E8%97%8F', "blog.html should avoid exposing bookmark query routes to crawlers");
 expectNotIncludes(postHtml, '?category=%E6%94%B6%E8%97%8F', "post.html should avoid exposing bookmark query routes to crawlers");
-expectIncludes(indexHtml, 'src="/js/notion-content.js"', "index.html should load the shared notion content helpers");
-expectIncludes(blogHtml, 'src="/js/notion-content.js"', "blog.html should load the shared notion content helpers");
-expectIncludes(postHtml, 'src="/js/notion-content.js"', "post.html should load the shared notion content helpers");
-expectIncludes(indexHtml, 'src="/js/runtime-core.js"', "index.html should load the shared runtime core before page scripts");
-expectIncludes(blogHtml, 'src="/js/runtime-core.js"', "blog.html should load the shared runtime core before page scripts");
-expectIncludes(postHtml, 'src="/js/runtime-core.js"', "post.html should load the shared runtime core before page scripts");
+const pageHtmlByLabel = [
+  ["index.html", indexHtml],
+  ["blog.html", blogHtml],
+  ["post.html", postHtml],
+];
+const sharedRuntimeScriptSources = [
+  "/js/font-loader.js",
+  "/js/notion-content.js",
+  "/js/runtime-core.js",
+  "/js/site-utils.js",
+  "/js/common.js",
+  "/js/ui-effects.js",
+  "/js/seo-meta.js",
+  "/js/spa-router.js",
+];
+pageHtmlByLabel.forEach(([label, htmlSource]) => {
+  sharedRuntimeScriptSources.forEach((src) => {
+    expectIncludes(
+      htmlSource,
+      `src="${src}" data-spa-runtime`,
+      `${label} should mark ${src} as a shared SPA runtime script`,
+    );
+  });
+});
 expectNoMalformedClosingTags(indexHtml, "index.html should not contain malformed closing tags");
 expectNoMalformedClosingTags(blogHtml, "blog.html should not contain malformed closing tags");
 expectNoMalformedClosingTags(postHtml, "post.html should not contain malformed closing tags");
@@ -515,95 +636,187 @@ expectIncludes(indexHtml, "data-page-focus", "index.html should mark a focus tar
 expectIncludes(blogHtml, "data-page-focus", "blog.html should mark a focus target");
 expectIncludes(blogHtml, 'id="blogStatus"', "blog.html should include the live status region");
 expectIncludes(blogHtml, 'id="blogGrid" role="list"', "blog grid should expose list semantics");
+expectIncludes(blogHtml, 'href="/css/blog-page.css"', "blog.html should load blog-page.css");
+expectIncludes(postHtml, 'href="/css/post-page.css"', "post.html should load post-page.css");
+expectIncludes(gitAttributes, "*.mjs text eol=lf", ".gitattributes should normalize .mjs files to LF");
+assert.ok(!styleCss.includes("\r\n"), "style.css should use LF line endings");
+assert.ok(!blogPageCss.includes("\r\n"), "blog-page.css should use LF line endings");
+assert.ok(!postPageCss.includes("\r\n"), "post-page.css should use LF line endings");
+assert.ok(!smokeCheckSource.includes("\r\n"), "smoke-check.mjs should use LF line endings");
+expectNotIncludes(styleCss, ".blog-grid {", "style.css should not ship the blog grid layout anymore");
+expectNotIncludes(styleCss, ".post-content {", "style.css should not ship post content styles anymore");
+expectNotIncludes(styleCss, ".fab-bookmark {", "style.css should not ship the floating post bookmark styles anymore");
+expectIncludes(blogPageCss, ".blog-grid {", "blog-page.css should own the blog grid layout");
+expectIncludes(postPageCss, ".post-content {", "post-page.css should own the post content styles");
+expectIncludes(postPageCss, ".fab-bookmark {", "post-page.css should own the floating bookmark styles");
+expectIncludes(spaRouterJs, 'script[src]:not([data-spa-runtime])', "SPA router should skip shared runtime scripts via HTML metadata");
+assert.ok(
+  !spaRouterJs.includes("SHARED_RUNTIME_SCRIPT_NAMES"),
+  "SPA router should not hardcode the shared runtime script list",
+);
 
-expectIncludes(commonJs, 'property="og:image"', "common.js should update og:image metadata");
-expectIncludes(commonJs, 'property="og:type"', "common.js should update og:type metadata");
-expectIncludes(commonJs, 'meta[name="robots"]', "common.js should manage robots metadata");
-expectIncludes(commonJs, '"touchcancel"', "common.js should reset particle acceleration on touchcancel");
-expectIncludes(commonJs, "hasFreshPrefetch", "common.js should expire stale prefetched routes");
-expectIncludes(commonJs, "const sharedContent = window.NotionContent || {};", "common.js should delegate shared content policies to notion-content");
-expectIncludes(commonJs, "resolveDisplayImageUrl", "common.js should expose display-safe image URLs");
-expectIncludes(commonJs, "resolveShareImageUrl", "common.js should normalize stable share images");
-expectIncludes(commonJs, "getPostIdFromUrl", "common.js should expose canonical post URL helpers");
-expectIncludes(commonJs, "getPreferredBlogReturnUrl", "common.js should expose a preferred blog return helper");
-expectIncludes(commonJs, "rememberBlogReturnUrl", "common.js should persist the last blog listing route");
-expectIncludes(commonJs, "buildBookmarkListingUrl", "common.js should expose a bookmark-listing URL helper");
-expectIncludes(commonJs, "parseBookmarkListingHash", "common.js should expose bookmark hash parsing for local-only views");
-expectIncludes(commonJs, "const PageProgress = window.PageProgress", "common.js should consume the shared page progress runtime helper");
-expectIncludes(commonJs, "const PageRuntime = window.PageRuntime", "common.js should consume the shared page runtime helper");
-expectIncludes(commonJs, "window.focusSpaContent", "common.js should consume the shared focus runtime helper");
-expectIncludes(commonJs, 'existingLink.hasAttribute("data-deferred-fonts")', "common.js should activate deferred font stylesheets that already exist in the DOM");
-expectIncludes(commonJs, "function isRouteHtmlCacheable(url)", "common.js should distinguish cacheable route HTML from live post routes");
-expectIncludes(commonJs, "const canCacheHtml = isRouteHtmlCacheable(routeKey);", "common.js should avoid caching post route HTML");
-expectIncludes(commonJs, 'if (!isRouteHtmlCacheable(routeKey)) return;', "common.js should skip prefetching post route HTML");
-expectIncludes(commonJs, "if (u.hash !== c.hash) return;", "common.js should leave same-document hash navigation to the browser");
-expectIncludes(commonJs, 'resolved.pathname === "/index.html"', "common.js should normalize the duplicate /index.html home route");
-expectIncludes(commonJs, 'history.replaceState(null, "", resolveUrl(window.location.href).href);', "common.js should replace duplicate home URLs with the canonical root route");
+const siteUtilsHarness = loadBrowserScript("js/site-utils.js", {
+  window: {
+    location: new URL("https://example.com/blog.html?category=Tech"),
+    matchMedia: () => ({
+      matches: false,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+    }),
+    NotionContent: {
+      resolveDisplayImageUrl: (value, baseOrigin) => {
+        if (!value || typeof value !== "string") return null;
+        const parsed = new URL(value, baseOrigin);
+        return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : null;
+      },
+    },
+  },
+  document: {
+    referrer: "https://example.com/blog.html?page=2",
+  },
+});
+assert.equal(
+  siteUtilsHarness.window.SiteUtils.buildPostPath("post 1"),
+  "/posts/post%201",
+  "SiteUtils should centralize canonical post-path generation",
+);
+const parsedBookmarkHash = siteUtilsHarness.window.SiteUtils.parseBookmarkListingHash(
+  "#bookmarks?search=Alpha&page=2",
+);
+assert.equal(parsedBookmarkHash.active, true, "SiteUtils should detect bookmark hash routes");
+assert.equal(parsedBookmarkHash.search, "Alpha", "SiteUtils should recover bookmark hash search state");
+assert.equal(parsedBookmarkHash.page, 2, "SiteUtils should recover bookmark hash page state");
+assert.equal(
+  parsedBookmarkHash.normalizedHash,
+  "#bookmarks?search=Alpha&page=2",
+  "SiteUtils should emit canonical bookmark hash routes",
+);
+assert.equal(
+  siteUtilsHarness.window.SiteUtils.resolveShareImageUrl(
+    "https://assets.example.com/image.png?X-Amz-Algorithm=test",
+    "https://example.com/fallback.png",
+  ),
+  "https://example.com/fallback.png",
+  "SiteUtils should drop expiring share-image URLs in favor of stable fallbacks",
+);
+assert.equal(
+  siteUtilsHarness.window.SiteUtils.getPreferredBlogReturnUrl(),
+  "https://example.com/blog.html?category=Tech",
+  "SiteUtils should remember the most recent blog listing URL",
+);
+
+const seoHead = createHeadMock();
+const descriptionMeta = new FakeElement();
+descriptionMeta.tagName = "meta";
+descriptionMeta.setAttribute("name", "description");
+descriptionMeta.content = "Initial description";
+seoHead.appendChild(descriptionMeta);
+const seoDocument = {
+  title: "Original title",
+  head: seoHead,
+  querySelector(selector) {
+    return seoHead.querySelector(selector);
+  },
+  createElement(tagName) {
+    const element = new FakeElement();
+    element.tagName = String(tagName).toLowerCase();
+    return element;
+  },
+};
+const seoHarness = loadBrowserScript("js/seo-meta.js", {
+  window: {
+    location: new URL("https://example.com/blog.html"),
+    SiteUtils: {
+      resolveShareImageUrl: (candidate, fallback) => candidate || fallback,
+    },
+  },
+  document: seoDocument,
+});
+seoHarness.window.updateSeoMeta({
+  title: "Updated article title",
+  description: "Updated description",
+  canonicalUrl: "https://example.com/posts/post-1#fragment",
+  robots: "index, follow",
+});
+assert.equal(seoHarness.document.title, "Updated article title", "SEO runtime should update document.title");
+assert.equal(
+  seoHead.querySelector('meta[name="description"]').content,
+  "Updated description",
+  "SEO runtime should update the meta description",
+);
+assert.equal(
+  seoHead.querySelector('link[rel="canonical"]').href,
+  "https://example.com/posts/post-1",
+  "SEO runtime should strip hashes from the canonical URL",
+);
+assert.equal(
+  seoHead.querySelector('meta[name="robots"]').content,
+  "index, follow",
+  "SEO runtime should set robots metadata when requested",
+);
+seoHarness.window.updateSeoMeta({ robots: null });
+assert.equal(
+  seoHead.querySelector('meta[name="robots"]'),
+  null,
+  "SEO runtime should remove robots metadata when callers clear it",
+);
+
+const routerReplaceCalls = [];
+const routerHarness = loadBrowserScript("js/spa-router.js", {
+  window: {
+    location: new URL("https://example.com/index.html"),
+    history: {
+      pushState: () => {},
+      replaceState(state, title, nextUrl) {
+        routerReplaceCalls.push(String(nextUrl));
+      },
+    },
+    PageProgress: {
+      start() {},
+      finish() {},
+    },
+    PageRuntime: {
+      getPageIdFromUrl: () => null,
+      initializePage: () => null,
+      cleanupCurrentPage: () => {},
+      register: () => {},
+    },
+  },
+  document: {
+    head: {
+      appendChild: () => null,
+    },
+    scripts: [],
+    getElementById: () => null,
+    querySelectorAll: () => [],
+    addEventListener: () => {},
+  },
+  globals: {
+    navigator: {
+      connection: null,
+    },
+    Element: class {},
+    HTMLLinkElement: class {},
+    DOMParser: class {},
+  },
+});
+assert.equal(
+  routerReplaceCalls.at(-1),
+  "https://example.com/",
+  "SPA router should canonicalize the duplicate /index.html route on boot",
+);
+assert.equal(
+  typeof routerHarness.window.SPARouter?.navigate,
+  "function",
+  "SPA router should expose a navigate() API",
+);
+
 expectIncludes(runtimeCoreJs, 'application/ld+json', "runtime-core.js should own structured data script management");
 expectIncludes(runtimeCoreJs, "page-progress", "runtime-core.js should wire the shared page progress bar");
 expectIncludes(runtimeCoreJs, "focusSpaContent", "runtime-core.js should expose SPA focus management");
 expectIncludes(runtimeCoreJs, "const PageRuntime = (() => {", "runtime-core.js should own page module registration and cleanup");
-expectNotIncludes(commonJs, ':not([data-deferred-fonts])', "common.js should not skip deferred page font stylesheets during SPA navigation");
-assert.ok(
-  !commonJs.includes("function warmPostDetail("),
-  "common.js should not prewarm full post payloads during SPA navigation",
-);
-assert.ok(
-  !commonJs.includes("NotionAPI.getPost(id).catch(() => {})"),
-  "common.js should not trigger hover-based full post fetches",
-);
-expectIncludes(blogPageJs, 'class="blog-card-link"', "blog cards should render a dedicated link layer");
-expectIncludes(blogPageJs, 'siteUtils.buildPostPath', "blog cards should link to canonical /posts/:id routes");
-expectIncludes(blogPageJs, "siteUtils.rememberBlogReturnUrl", "blog page should persist the current listing URL");
-expectIncludes(blogPageJs, "window.NotionContent", "blog page should fall back to shared content helpers when NotionAPI is unavailable");
-expectIncludes(blogPageJs, "SHARED_CONTENT", "blog page should derive shared category definitions from the shared notion content module");
-expectIncludes(blogPageJs, "const defaultCategory = hasRemoteSource ? ALL_CATEGORY : BOOKMARK_CATEGORY;", "blog page should derive a single default category for both remote and bookmark-only modes");
-expectIncludes(blogPageJs, 'if (!hasRemoteSource && currentCategory !== BOOKMARK_CATEGORY)', "blog page should keep the local bookmark listing available when NotionAPI is unavailable");
-expectIncludes(blogPageJs, "BOOKMARK_ONLY_CATEGORIES", "blog page should expose a bookmark-only fallback filter set");
-expectIncludes(blogPageJs, "buildBookmarkPageData", "blog page should centralize local bookmark pagination and filtering");
-expectIncludes(blogPageJs, "buildBookmarkSearchText", "blog page should reuse one bookmark search-text builder");
-expectIncludes(blogPageJs, "normalizeBookmarkSearchQuery", "blog page should normalize bookmark search queries with the shared search helper");
-expectIncludes(blogPageJs, "loadCurrentPageData", "blog page should centralize the active data source selection");
-expectIncludes(blogPageJs, "didNormalizeRoute", "blog page should normalize invalid incoming route state before rendering");
-expectIncludes(blogPageJs, "parseBookmarkListingHash", "blog page should read bookmark-only route state from the URL hash");
-expectIncludes(blogPageJs, "buildBookmarkListingUrl", "blog page should serialize bookmark-only route state back into hash URLs");
-expectIncludes(blogPageJs, "bindBookmarkHashNavigation", "blog page should react to same-document bookmark hash navigation");
-expectIncludes(blogPageJs, 'const HISTORY_MODE_REPLACE = "replace";', "blog page should name the replaceState history mode");
-expectIncludes(blogPageJs, 'const HISTORY_MODE_PUSH = "push";', "blog page should name the pushState history mode");
-expectIncludes(blogPageJs, "function syncListingUrl(historyMode = HISTORY_MODE_REPLACE)", "blog page should centralize URL sync with explicit history modes");
-expectIncludes(blogPageJs, 'history.pushState(null, "", nextUrl);', "blog page should push user-driven list state changes into browser history");
-expectIncludes(blogPageJs, 'history.replaceState(null, "", nextUrl);', "blog page should still replace normalized list URLs without adding history noise");
-expectIncludes(blogPageJs, 'data-post-tags="${serializedTags}"', "blog cards should serialize tags for bookmark fallback");
-expectIncludes(blogPageJs, 'aria-pressed="${bookmarked ? "true" : "false"}"', "bookmark buttons should expose pressed state");
-expectIncludes(blogPageJs, "announceStatus(", "blog page should announce result updates");
-expectIncludes(blogPageJs, "siteUtils.resolveShareImageUrl", "blog page should drop expiring remote cover URLs before rendering cards");
-expectIncludes(blogPageJs, "restoreCoverPlaceholder", "blog page should restore a gradient/emoji cover when an image fails to load");
-expectIncludes(blogPageJs, 'data-cover-gradient="${esc(safeCoverGradient)}"', "blog cards should preserve a fallback cover gradient for failed images");
-expectIncludes(blogPageJs, 'data-cover-emoji="${safeCoverEmoji}"', "blog cards should preserve a fallback cover emoji for failed images");
-expectIncludes(blogPageJs, 'const seoUrl = isLocalBookmarkView ? "/blog.html" : window.location.href;', "blog page should collapse bookmark canonicals back to the public blog route");
-expectIncludes(blogPageJs, 'const seoRobots = isLocalBookmarkView ? "noindex, nofollow" : null;', "blog page should keep local bookmark views out of the index");
-expectIncludes(blogPageJs, "收藏失败，请稍后重试", "blog page should announce bookmark persistence failures");
-expectIncludes(blogPageJs, "searchInput.value = currentSearch;", "blog page should preserve the current search text in failure states");
-expectIncludes(blogPageJs, "updatePageUI();", "blog page should reflect route context before showing a failure state");
-expectIncludes(blogPageJs, "syncListingUrl(HISTORY_MODE_REPLACE);\n        updatePageUI();\n        renderPosts();", "blog page should replace URL entries for live search updates");
-expectIncludes(blogPageJs, "if (didNormalizeRoute) {\n      syncListingUrl();\n    }\n    updatePageUI();", "blog page should canonicalize invalid category/search/page params on first render");
-assert.ok(
-  !blogPageJs.includes("scheduleDetailWarmup("),
-  "blog page should not prewarm full article payloads from listing results",
-);
-assert.ok(
-  !blogPageJs.includes("notionApi.getPost(firstPostId)"),
-  "blog page should not trigger full post fetches during idle warmup",
-);
-assert.ok(
-  !blogPageJs.includes("await bookmarkManager.hydrateMissingMetadata"),
-  "blog page should hydrate legacy bookmark metadata in the background",
-);
-assert.ok(
-  !blogPageJs.includes("blog_history"),
-  "blog page should not keep unused blog_history persistence code",
-);
-expectNotIncludes(blogPageJs, "?{", "blog page should not contain corrupted template interpolations");
 expectIncludes(bookmarkJs, "parseSerializedTags", "bookmark fallback should recover serialized tags");
 expectIncludes(bookmarkJs, "createBookmarkEntry", "bookmark manager should centralize bookmark record creation");
 expectIncludes(bookmarkJs, "buildCardBookmarkSource", "bookmark manager should centralize DOM snapshot extraction");
@@ -643,7 +856,9 @@ assert.equal(
   "shared notion content module should expose the canonical bookmark category label",
 );
 assert.ok(
-  notionContentHelpers.getRemoteBlogCategories().some((category) => category.name === "精选"),
+  notionContentHelpers.getRemoteBlogCategories().some(
+    (category) => category.name && category.name !== notionContentHelpers.ALL_CATEGORY,
+  ),
   "shared notion content module should publish the remote category list for client pages",
 );
 notionBlockFixtures.forEach(runNotionBlockFixture);
@@ -739,7 +954,7 @@ assert.equal(
     id: "bookmark-1",
     title: "Ephemeral cover",
     coverImage: ephemeralCoverImage,
-    coverEmoji: "🖼️",
+    coverEmoji: "📘",
     coverGradient: "linear-gradient(135deg, #111111, #222222)",
     tags: [],
   }),
@@ -758,15 +973,15 @@ assert.equal(
 );
 const renamedSchema = notionContentHelpers.resolveNotionContentSchema({
   properties: {
-    标题: { id: "title", name: "标题", type: "title" },
-    摘要: { id: "excerpt", name: "摘要", type: "rich_text" },
-    阅读时间: { id: "readTime", name: "阅读时间", type: "rich_text" },
-    标签: { id: "tags", name: "标签", type: "multi_select" },
-    分类: { id: "category", name: "分类", type: "select" },
-    发布时间: { id: "date", name: "发布时间", type: "date" },
+    Title: { id: "title", name: "Title", type: "title" },
+    Summary: { id: "excerpt", name: "Summary", type: "rich_text" },
+    "Read Time": { id: "readTime", name: "Read Time", type: "rich_text" },
+    Tags: { id: "tags", name: "Tags", type: "multi_select" },
+    Category: { id: "category", name: "Category", type: "select" },
+    "Published At": { id: "date", name: "Published At", type: "date" },
   },
 });
-assert.equal(renamedSchema.title?.name, "标题", "schema resolution should find renamed title properties");
+assert.equal(renamedSchema.title?.name, "Title", "schema resolution should find renamed title properties");
 assert.equal(
   notionContentHelpers.buildPostSearchText({
     title: "  Shared Search  ",
@@ -779,14 +994,14 @@ assert.equal(
 assert.equal(
   notionContentHelpers.mapNotionPage({
     id: "post-1",
-    icon: { emoji: "🧪" },
+    icon: { emoji: "📘" },
     properties: {
-      标题: { id: "title", name: "标题", type: "title", title: [{ plain_text: "Schema-aware title" }] },
-      摘要: { id: "excerpt", name: "摘要", type: "rich_text", rich_text: [{ plain_text: "Schema-aware excerpt" }] },
-      阅读时间: { id: "readTime", name: "阅读时间", type: "rich_text", rich_text: [{ plain_text: "5 min" }] },
-      标签: { id: "tags", name: "标签", type: "multi_select", multi_select: [{ name: "TypeScript" }] },
-      分类: { id: "category", name: "分类", type: "select", select: { name: "技术" } },
-      发布时间: { id: "date", name: "发布时间", type: "date", date: { start: "2026-04-08" } },
+      Title: { id: "title", name: "Title", type: "title", title: [{ plain_text: "Schema-aware title" }] },
+      Summary: { id: "excerpt", name: "Summary", type: "rich_text", rich_text: [{ plain_text: "Schema-aware excerpt" }] },
+      "Read Time": { id: "readTime", name: "Read Time", type: "rich_text", rich_text: [{ plain_text: "5 min" }] },
+      Tags: { id: "tags", name: "Tags", type: "multi_select", multi_select: [{ name: "TypeScript" }] },
+      Category: { id: "category", name: "Category", type: "select", select: { name: "Tech" } },
+      "Published At": { id: "date", name: "Published At", type: "date", date: { start: "2026-04-08" } },
     },
   }, {
     schema: renamedSchema,
@@ -794,6 +1009,79 @@ assert.equal(
   "Schema-aware title",
   "page mapping should honor the resolved schema when Notion properties are renamed",
 );
+const sharedArticleStructuredData = notionContentHelpers.buildArticleStructuredData({
+  id: "post-1",
+  title: "Structured article",
+  excerpt: "Structured excerpt",
+  category: "Tech",
+  date: "2026-04-17",
+  coverImage: "https://example.com/cover.png",
+  tags: ["Alpha", "Beta"],
+}, {
+  canonicalUrl: "https://example.com/posts/post-1",
+  defaultShareImageUrl: "https://example.com/favicon.png?v=2",
+  baseOrigin: "https://example.com",
+});
+assert.equal(
+  sharedArticleStructuredData.mainEntityOfPage,
+  "https://example.com/posts/post-1",
+  "shared notion content helpers should build canonical article structured data",
+);
+assert.equal(
+  sharedArticleStructuredData.image[0],
+  "https://example.com/cover.png",
+  "shared notion content helpers should preserve stable article images in structured data",
+);
+const serverArticleStructuredData = serverNotionHelpers.buildArticleStructuredData({
+  id: "post-1",
+  title: "Structured article",
+  excerpt: "Structured excerpt",
+  category: "Tech",
+  date: "2026-04-17",
+  coverImage: "https://example.com/cover.png",
+  tags: ["Alpha", "Beta"],
+});
+assert.equal(
+  serverArticleStructuredData.headline,
+  "Structured article",
+  "server notion structured data should preserve the article headline",
+);
+assert.equal(
+  serverArticleStructuredData.keywords,
+  "Alpha, Beta",
+  "server notion structured data should preserve normalized article keywords",
+);
+assert.ok(
+  serverArticleStructuredData.mainEntityOfPage.endsWith("/posts/post-1"),
+  "server notion structured data should point at the canonical post route",
+);
+assert.equal(
+  serverArticleStructuredData.image[0],
+  "https://example.com/cover.png",
+  "server notion structured data should preserve stable article images",
+);
+function buildBookmarkListingUrlMock({ search = "", page = 1, pathname = "/blog.html" } = {}) {
+  const params = new URLSearchParams();
+  const normalizedSearch = typeof search === "string" ? search.trim() : "";
+  const normalizedPage = Math.max(1, Number.parseInt(String(page ?? ""), 10) || 1);
+  if (normalizedSearch) params.set("search", normalizedSearch);
+  if (normalizedPage > 1) params.set("page", String(normalizedPage));
+  const query = params.toString();
+  return `${pathname}#bookmarks${query ? `?${query}` : ""}`;
+}
+
+function parseBookmarkListingHashMock(hash = "") {
+  const rawHash = typeof hash === "string" ? hash.trim() : "";
+  if (!rawHash.startsWith("#bookmarks")) {
+    return { active: false, search: "", page: 1, normalizedHash: "" };
+  }
+  const params = new URLSearchParams(rawHash.slice("#bookmarks".length).replace(/^\?/, ""));
+  const search = (params.get("search") || "").trim();
+  const page = Math.max(1, Number.parseInt(String(params.get("page") || ""), 10) || 1);
+  const normalizedHash = `#bookmarks${params.toString() ? `?${params.toString()}` : ""}`;
+  return { active: true, search, page, normalizedHash };
+
+}
 const registeredPages = new Map();
 const blogFiltersEl = new FakeElement();
 const blogSearchEl = new FakeElement();
@@ -804,11 +1092,11 @@ const blogStatusEl = new FakeElement();
 const blogPageTitleEl = new FakeElement();
 const topActionOverview = {
   classList: createClassList(),
-  querySelector: (selector) => (selector === "span" ? { textContent: "总览" } : null),
+  querySelector: (selector) => (selector === "span" ? { textContent: "鎬昏" } : null),
 };
 const topActionBookmark = {
   classList: createClassList(),
-  querySelector: (selector) => (selector === "span" ? { textContent: "收藏" } : null),
+  querySelector: (selector) => (selector === "span" ? { textContent: "鏀惰棌" } : null),
 };
 const blogLocation = new URL("https://example.com/blog.html");
 const blogHistory = {
@@ -832,9 +1120,9 @@ loadBrowserScript("js/blog-page.js", {
       escapeHtml: (value) => String(value ?? ""),
       getCategoryColor: () => ({ bg: "#000", color: "#fff", border: "#222" }),
       getCategories: () => [
-        { name: "全部", emoji: "📋" },
-        { name: "技术", emoji: "💻" },
-        { name: "收藏", emoji: "📚" },
+        { name: "All", emoji: "📚" },
+        { name: "Tech", emoji: "🧠" },
+        { name: "Bookmarks", emoji: "🔖" },
       ],
       getPageSize: () => 9,
       queryPosts: async () => ({
@@ -855,6 +1143,8 @@ loadBrowserScript("js/blog-page.js", {
       resolveDisplayImageUrl: (value) => value,
       sanitizeImageUrl: (value) => value,
       buildPostPath: (postId) => `/posts/${postId}`,
+      buildBookmarkListingUrl: buildBookmarkListingUrlMock,
+      parseBookmarkListingHash: parseBookmarkListingHashMock,
     },
     updateSeoMeta: () => {},
     initBlogCardReveal: () => null,
@@ -888,7 +1178,7 @@ loadBrowserScript("js/blog-page.js", {
 const blogPageCleanup = registeredPages.get("blog")?.init?.();
 await Promise.resolve();
 const filterButton = {
-  dataset: { category: "技术" },
+    dataset: { category: "Tech" },
   closest(selector) {
     return selector === ".filter-btn" ? this : null;
   },
@@ -896,15 +1186,15 @@ const filterButton = {
 blogFiltersEl.dispatch("click", { target: filterButton });
 assert.equal(
   blogHistory.pushCalls.at(-1),
-  "/blog.html?category=%E6%8A%80%E6%9C%AF",
+  "/blog.html?category=Tech",
   "blog page should push filter state changes so browser back returns to the previous listing state",
 );
-blogSearchEl.value = "深度测试";
+blogSearchEl.value = "deep test";
 blogSearchEl.dispatch("input");
 await new Promise((resolve) => setTimeout(resolve, 350));
 assert.equal(
   blogHistory.replaceCalls.at(-1),
-  "/blog.html?category=%E6%8A%80%E6%9C%AF&search=%E6%B7%B1%E5%BA%A6%E6%B5%8B%E8%AF%95",
+  "/blog.html?category=Tech&search=deep+test",
   "blog page should replace the current history entry while live search text changes",
 );
 blogPageCleanup?.();
@@ -918,11 +1208,11 @@ const legacyBookmarkStatusEl = new FakeElement();
 const legacyBookmarkTitleEl = new FakeElement();
 const legacyBookmarkOverviewAction = {
   classList: createClassList(),
-  querySelector: (selector) => (selector === "span" ? { textContent: "总览" } : null),
+  querySelector: (selector) => (selector === "span" ? { textContent: "鎬昏" } : null),
 };
 const legacyBookmarkAction = {
   classList: createClassList(),
-  querySelector: (selector) => (selector === "span" ? { textContent: "收藏" } : null),
+  querySelector: (selector) => (selector === "span" ? { textContent: "鏀惰棌" } : null),
 };
 const legacyBookmarkLocation = new URL("https://example.com/blog.html?category=%E6%94%B6%E8%97%8F&search=Alpha&page=2");
 const legacyBookmarkHistory = {
@@ -946,8 +1236,8 @@ loadBrowserScript("js/blog-page.js", {
       escapeHtml: (value) => String(value ?? ""),
       getCategoryColor: () => ({ bg: "#000", color: "#fff", border: "#222" }),
       getCategories: () => [
-        { name: "全部", emoji: "📋" },
-        { name: "技术", emoji: "💻" },
+        { name: "All", emoji: "📚" },
+        { name: "Tech", emoji: "🧠" },
       ],
       getPageSize: () => 9,
       queryPosts: async () => ({
@@ -969,6 +1259,8 @@ loadBrowserScript("js/blog-page.js", {
       resolveDisplayImageUrl: (value) => value,
       sanitizeImageUrl: (value) => value,
       buildPostPath: (postId) => `/posts/${postId}`,
+      buildBookmarkListingUrl: buildBookmarkListingUrlMock,
+      parseBookmarkListingHash: parseBookmarkListingHashMock,
     },
     updateSeoMeta: () => {},
     initBlogCardReveal: () => null,
@@ -1018,13 +1310,13 @@ const bookmarkHashTitleEl = new FakeElement();
 const bookmarkHashHandlers = new Set();
 const bookmarkHashOverviewAction = {
   classList: createClassList(),
-  querySelector: (selector) => (selector === "span" ? { textContent: "总览" } : null),
+  querySelector: (selector) => (selector === "span" ? { textContent: "鎬昏" } : null),
 };
 const bookmarkHashAction = {
   classList: createClassList(),
-  querySelector: (selector) => (selector === "span" ? { textContent: "收藏" } : null),
+  querySelector: (selector) => (selector === "span" ? { textContent: "鏀惰棌" } : null),
 };
-const bookmarkHashLocation = new URL("https://example.com/blog.html#bookmarks?search=TypeScript%20%20Testing");
+const bookmarkHashLocation = new URL("https://example.com/blog.html#bookmarks?search=TypeScript%20%20Testing&page=3");
 const bookmarkHashHistory = {
   pushCalls: [],
   replaceCalls: [],
@@ -1051,7 +1343,7 @@ loadBrowserScript("js/blog-page.js", {
         date: "",
         readTime: "",
         coverImage: null,
-        coverEmoji: "📝",
+        coverEmoji: "馃摑",
         coverGradient: "linear-gradient(135deg, #111111, #222222)",
         tags: ["TypeScript", "Testing"],
       }],
@@ -1113,6 +1405,11 @@ loadBrowserScript("js/blog-page.js", {
 });
 const bookmarkHashCleanup = bookmarkHashRegisteredPages.get("blog")?.init?.();
 await Promise.resolve();
+assert.equal(
+  bookmarkHashHistory.replaceCalls.at(0),
+  "/blog.html#bookmarks?search=TypeScript++Testing&page=3",
+  "blog page should preserve bookmark search and page params when it falls back to its local bookmark hash URL builder",
+);
 assert.ok(
   bookmarkHashGridEl.innerHTML.includes("Bookmark hit"),
   "blog page should keep bookmark search matches when the query contains extra whitespace",
@@ -1158,11 +1455,11 @@ const notionApiHarness = loadBrowserScript("js/notion-api.js", {
       id: "session-post-1",
       title: "Session cached title",
       excerpt: "Session cached excerpt",
-      category: "技术",
+      category: "Tech",
       date: "2026-04-17",
       readTime: "5 min",
       coverImage: `${ephemeralCoverImage}&padding=${"x".repeat(360)}`,
-      coverEmoji: "🧪",
+      coverEmoji: "馃И",
       coverGradient: "linear-gradient(135deg, #111111, #222222)",
       tags: ["Alpha", "Beta", "Gamma"],
       content: [],
@@ -1236,7 +1533,7 @@ assert.ok(
   "notion client should remove stale-response cache branches when public content must stay live",
 );
 assert.ok(
-  !notionApiJs.includes("以下逻辑与服务端"),
+  !notionApiJs.includes("浠ヤ笅閫昏緫涓庢湇鍔＄"),
   "notion client should not ask maintainers to keep a duplicated server copy in sync",
 );
 assert.ok(
@@ -1266,13 +1563,14 @@ expectIncludes(indexPageJs, 'ctaHome.href = "/blog.html";', "index page should p
 expectIncludes(indexPageJs, "siteUtils.buildBookmarkListingUrl", "index page should reuse the shared bookmark-listing URL helper");
 expectIncludes(indexPageJs, 'navigateTo(`/blog.html?search=${encodeURIComponent(query)}`);', "index page search navigation should use root-relative paths");
 expectIncludes(postPageJs, 'window.StructuredData?.set?.("post-article"', "post page should publish article structured data");
+expectIncludes(postPageJs, "sharedContent.buildArticleStructuredData", "post page should reuse the shared article structured-data helper");
 expectIncludes(postPageJs, "initialPostData", "post page should reuse server-rendered post payloads");
 expectIncludes(postPageJs, "notionApi.renderPostArticle(post)", "post page should reuse the shared article-shell renderer for client-side redraws");
 expectIncludes(postPageJs, "siteUtils.getPreferredBlogReturnUrl", "post page back navigation should restore the preferred blog listing route");
 expectIncludes(postPageJs, "nowBookmarked === null", "post page should leave bookmark UI unchanged when persistence fails");
 expectIncludes(postPageJs, "isMissingPostError", "post page should distinguish not-found posts from temporary failures");
 expectIncludes(postPageJs, "showEmpty(isMissingPostError(error) ? \"not-found\" : \"unavailable\")", "post page should map 404-like errors to the not-found empty state");
-expectIncludes(postPageJs, "announceStatus(`收藏失败，请稍后重试", "post page should announce bookmark persistence failures");
+expectIncludes(postPageJs, "收藏失败，请稍后重试", "post page should announce bookmark persistence failures");
 expectIncludes(postPageJs, "hasServerRenderedContent", "post page should detect pre-rendered article content");
 expectIncludes(postPageJs, "showServerRenderedFallback", "post page should preserve server-rendered content when NotionAPI is unavailable");
 expectIncludes(postPageJs, "canBookmarkFromInitialData", "post page should recover bookmark controls from SSR initial data when the client API is unavailable");
@@ -1316,7 +1614,7 @@ initialPostDataScriptEl.textContent = JSON.stringify({
   date: "2026-04-17",
   readTime: "5 min",
   coverImage: null,
-  coverEmoji: "📝",
+  coverEmoji: "馃摑",
   coverGradient: "linear-gradient(135deg, #111111, #222222)",
   tags: ["TypeScript"],
 });
@@ -1382,8 +1680,7 @@ postPageCleanup?.();
 expectIncludes(apiPostJs, 'upsertStructuredDataScript(html, "post-article"', "article HTML route should emit structured data");
 expectIncludes(apiPostJs, 'id="initialPostData"', "article HTML route should emit initial post data");
 expectIncludes(apiPostJs, "buildUnavailableContent", "article HTML route should distinguish upstream failures from not-found routes");
-expectIncludes(apiPostJs, 'req.method !== "GET" && req.method !== "HEAD"', "article HTML route should reject non-GET/HEAD requests explicitly");
-expectIncludes(apiPostJs, 'res.setHeader("Allow", "GET, HEAD");', "article HTML route should advertise the supported methods on 405 responses");
+expectIncludes(apiPostJs, "rejectUnsupportedReadMethod", "article HTML route should reuse the shared read-method guard");
 expectIncludes(apiPostJs, "getPublicPostErrorStatus", "article HTML route should reuse shared public-post error mapping");
 expectIncludes(apiPostJs, "fetchPublicPost", "article HTML route should only render posts from the public blog set");
 expectIncludes(apiPostJs, "renderPostArticle(post, { renderedContent, baseOrigin: siteOrigin })", "article HTML route should reuse the shared article-shell renderer for SSR");
@@ -1406,7 +1703,7 @@ const initialPostPayload = apiPostHelpers.buildInitialPostPayload({
   date: "2026-04-11",
   readTime: "5 min",
   coverImage: "https://example.com/cover.png",
-  coverEmoji: "馃摑",
+  coverEmoji: "棣冩憫",
   coverGradient: "linear-gradient(135deg, #111111, #222222)",
   tags: ["TypeScript"],
   content: [{ type: "paragraph", text: "Hello" }],
@@ -1459,11 +1756,27 @@ assert.equal(
   2,
   "empty-state replacement should preserve replacement tokens in both the message and link text",
 );
+const postRouteMethodNotAllowedRes = createApiResponseRecorder();
+await apiPostHandler({ method: "POST", query: {} }, postRouteMethodNotAllowedRes);
+assert.equal(postRouteMethodNotAllowedRes.statusCode, 405, "article HTML route should reject unsupported methods with HTTP 405");
+assert.equal(postRouteMethodNotAllowedRes.getHeader("allow"), "GET, HEAD", "article HTML route should advertise the supported methods on 405 responses");
+assert.equal(postRouteMethodNotAllowedRes.getHeader("cache-control"), "no-store", "article HTML route should mark 405 responses as non-cacheable");
 expectIncludes(apiPostsDataJs, "queryPublicPosts", "post list endpoint should serve the public blog set through a semantic API");
 expectIncludes(apiPostsDataJs, '"Cache-Control", "no-store"', "post list endpoint should not cache public responses");
 expectIncludes(apiPostDataJs, "fetchPublicPost", "post data endpoint should only serve posts from the public blog set");
 expectIncludes(apiPostDataJs, "getPublicPostErrorStatus", "post data endpoint should reuse shared public-post error mapping");
 expectIncludes(apiPostDataJs, '"Cache-Control", "no-store"', "post data endpoint should not cache public responses");
+expectIncludes(publicContentJs, "rejectUnsupportedReadMethod", "public content helper should centralize read-only method guards");
+const postsDataMethodNotAllowedRes = createApiResponseRecorder();
+await apiPostsDataHandler({ method: "POST", query: {} }, postsDataMethodNotAllowedRes);
+assert.equal(postsDataMethodNotAllowedRes.statusCode, 405, "post list endpoint should reject unsupported methods with HTTP 405");
+assert.equal(postsDataMethodNotAllowedRes.getHeader("allow"), "GET, HEAD", "post list endpoint should advertise the supported methods on 405 responses");
+assert.equal(postsDataMethodNotAllowedRes.getHeader("cache-control"), "no-store", "post list endpoint should mark 405 responses as non-cacheable");
+const postDataMethodNotAllowedRes = createApiResponseRecorder();
+await apiPostDataHandler({ method: "POST", query: {} }, postDataMethodNotAllowedRes);
+assert.equal(postDataMethodNotAllowedRes.statusCode, 405, "post data endpoint should reject unsupported methods with HTTP 405");
+assert.equal(postDataMethodNotAllowedRes.getHeader("allow"), "GET, HEAD", "post data endpoint should advertise the supported methods on 405 responses");
+assert.equal(postDataMethodNotAllowedRes.getHeader("cache-control"), "no-store", "post data endpoint should mark 405 responses as non-cacheable");
 expectIncludes(publicContentJs, "getPublicPostErrorStatus", "public content helper should centralize post error mapping");
 expectIncludes(publicContentJs, "notion_public_config_error", "public content helper should surface public access misconfiguration as a server error");
 expectIncludes(publicContentJs, "notion_timeout_error", "public content helper should preserve upstream timeout status");
@@ -1519,27 +1832,28 @@ expectIncludes(serverNotionJs, "runWithBlockChildConcurrency", "server notion la
 expectIncludes(serverNotionJs, "Ambiguous Notion public visibility property configuration", "server notion layer should fail closed when multiple public visibility fields match");
 expectIncludes(serverNotionJs, "findPropertyEntriesByCandidates", "server notion layer should inspect all matching public visibility properties");
 expectIncludes(serverNotionJs, 'require("../js/notion-content")', "server notion layer should reuse the shared notion content helpers");
+expectIncludes(serverNotionJs, "buildSharedArticleStructuredData", "server notion layer should delegate article structured data to the shared content helper");
 expectIncludes(serverNotionJs, "resolveNotionContentSchema", "server notion layer should resolve renamed content properties from database metadata");
 expectIncludes(serverNotionJs, "renderPostContent", "server notion layer should render SSR post HTML without duplicating it in API payloads");
 expectNotIncludes(serverNotionJs, "buildSearchFilter", "server notion layer should not delegate search semantics to upstream filters that behave differently from local search");
-expectNotIncludes(serverNotionJs, 'category === "鍏ㄩ儴"', "server notion layer should not compare against a mojibake category label");
+expectNotIncludes(serverNotionJs, 'category === "閸忋劑鍎?', "server notion layer should not compare against a mojibake category label");
 const resolvedContentSchema = serverNotionHelpers.buildContentSchema({
   properties: {
-    标题: { id: "title", name: "标题", type: "title" },
-    摘要: { id: "excerpt", name: "摘要", type: "rich_text" },
-    分类: { id: "category", name: "分类", type: "select" },
-    发布时间: { id: "date", name: "发布时间", type: "date" },
+    Title: { id: "title", name: "Title", type: "title" },
+    Summary: { id: "excerpt", name: "Summary", type: "rich_text" },
+    Category: { id: "category", name: "Category", type: "select" },
+    "Published At": { id: "date", name: "Published At", type: "date" },
   },
 });
 assert.equal(
   resolvedContentSchema.title?.name,
-  "标题",
+  "Title",
   "server notion layer should resolve renamed content properties from database metadata",
 );
 assert.equal(
   JSON.stringify(serverNotionHelpers.buildDatabaseSorts(resolvedContentSchema)),
   JSON.stringify([{
-    property: "发布时间",
+    property: "Published At",
     direction: "descending",
   }]),
   "server notion layer should sort by the resolved date property instead of a hardcoded field name",
@@ -2028,7 +2342,7 @@ assert.equal(
   "server notion layer should recover cleanly after a failed in-flight post-detail request",
 );
 assert.ok(
-  !serverNotionJs.includes("务必同步更新 js/notion-api.js"),
+  !serverNotionJs.includes("鍔″繀鍚屾鏇存柊 js/notion-api.js"),
   "server notion layer should not depend on manually syncing duplicated client helpers",
 );
 assert.ok(
@@ -2040,6 +2354,14 @@ assert.ok(
   !apiNotionJs.includes("Authorization: `Bearer"),
   "API proxy should not forward arbitrary authenticated Notion requests anymore",
 );
+assert.ok(
+  !apiNotionJs.includes("Access-Control-Allow-Origin"),
+  "disabled Notion proxy should not keep dead per-origin CORS response handling",
+);
+const disabledProxyResponse = createApiResponseRecorder();
+await apiNotionHandler({ method: "GET", headers: {} }, disabledProxyResponse);
+assert.equal(disabledProxyResponse.statusCode, 410, "disabled Notion proxy should return HTTP 410");
+assert.equal(disabledProxyResponse.getHeader("cache-control"), "no-store", "disabled Notion proxy should mark responses as non-cacheable");
 expectIncludes(apiSitemapJs, "buildPostUrl", "dynamic sitemap should include article routes");
 expectIncludes(apiSitemapJs, "queryPublicPages", "dynamic sitemap should only include public posts");
 expectIncludes(apiSitemapJs, '"Cache-Control", "no-store"', "dynamic sitemap should not outlive public access changes");

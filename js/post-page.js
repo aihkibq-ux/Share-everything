@@ -1,8 +1,12 @@
 (() => {
   function initPostPage() {
     const notionApi = window.NotionAPI;
+    const sharedContent = window.NotionContent || {};
     const siteUtils = window.SiteUtils || {};
     const bookmarkManager = window.BookmarkManager || null;
+    const buildArticleStructuredData = typeof sharedContent.buildArticleStructuredData === "function"
+      ? sharedContent.buildArticleStructuredData
+      : null;
     const defaultShareImageUrl = new URL("favicon.png?v=2", window.location.origin).href;
     const skeletonEl = document.getElementById("postSkeleton");
     const contentEl = document.getElementById("postContent");
@@ -366,37 +370,23 @@
 
         const shouldReuseServerMarkup = canHydrateFromInitialData && contentEl.childElementCount > 0;
         if (!shouldReuseServerMarkup) {
+          // SAFETY: notionApi.renderPostArticle() delegates to the shared
+          // NotionContent renderer, which escapes text and sanitizes URLs/CSS.
           contentEl.innerHTML = notionApi.renderPostArticle(post);
         }
 
         skeletonEl.style.display = "none";
         contentEl.style.display = "block";
         contentEl.style.animation = shouldReuseServerMarkup ? "" : "fadeInUp 0.6s ease both";
-        window.StructuredData?.set?.("post-article", {
-          "@context": "https://schema.org",
-          "@type": "Article",
-          headline: post.title,
-          description,
-          articleSection: post.category || undefined,
-          keywords: Array.isArray(post.tags) ? post.tags.join(", ") : undefined,
-          datePublished: post.date || undefined,
-          dateModified: post.date || undefined,
-          image: [structuredDataImage],
-          mainEntityOfPage: canonicalUrl.href,
-          url: canonicalUrl.href,
-          author: {
-            "@type": "Organization",
-            name: "Share Everything",
-          },
-          publisher: {
-            "@type": "Organization",
-            name: "Share Everything",
-            logo: {
-              "@type": "ImageObject",
-              url: defaultShareImageUrl,
-            },
-          },
-        });
+        if (buildArticleStructuredData) {
+          window.StructuredData?.set?.("post-article", buildArticleStructuredData(post, {
+            canonicalUrl: canonicalUrl.href,
+            defaultShareImageUrl,
+            imageUrl: structuredDataImage,
+          }));
+        } else {
+          window.StructuredData?.clear?.("post-article");
+        }
         const spaContent = document.getElementById("spa-content");
         if (spaContent?.dataset.pendingFocus) {
           window.requestAnimationFrame(() => {

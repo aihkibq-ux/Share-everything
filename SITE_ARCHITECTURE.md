@@ -1,427 +1,410 @@
-# Share Everything — 网站架构文档
+# Share Everything 网站架构文档
 
 > 更新时间：2026-04-17
 
-## 1. 架构概述
+## 1. 架构概览
 
-**一句话定义**：Notion 内容源 + Vercel Serverless 渲染 + Cloudflare DNS 的轻量内容站。
+一句话定义：Notion 作为内容源，Vercel Serverless 负责公开内容访问与文章 SSR，前端采用原生 HTML / CSS / JS，并在真实页面入口之上叠加轻量 SPA 导航。
 
-不是 React / Next.js / Vue 项目，不是 Cloudflare Pages / Workers 项目。
+这不是 React / Next.js / Vue 项目，也不是 Cloudflare Workers / Pages 项目。Cloudflare 只承担 DNS。
 
 ### 1.1 技术栈
 
 | 层 | 技术 | 说明 |
-|---|------|------|
-| 内容源 | Notion API | 数据库存储文章，block 存储正文 |
-| 服务端 | Vercel Serverless Functions | SSR 详情页、JSON API、动态 sitemap |
-| 前端 | 原生 HTML / CSS / JS | 轻量 SPA 导航 + 真实 HTML 入口 |
-| DNS | Cloudflare | 仅托管 DNS 记录，无 Workers / Pages |
-| 收藏 | 浏览器 localStorage | 完全本地化，不涉及服务端 |
+|---|---|---|
+| 内容源 | Notion API | 存储文章摘要字段与 block 正文 |
+| 服务端 | Vercel Serverless Functions | 公开文章查询、详情 SSR、sitemap |
+| 前端 | 原生 HTML / CSS / JS | 真正可直接访问的页面 + 轻量 SPA 导航 |
+| DNS | Cloudflare | 仅托管 DNS 记录 |
+| 收藏 | `localStorage` | 完全本地化，不依赖服务端 |
 
 ### 1.2 数据流总览
 
 ```text
-┌─────────────┐                      ┌──────────────────────┐
-│  Notion DB  │ ◄── Notion API ───── │  Vercel Serverless   │
-│  (内容源)    │ ── JSON 响应 ──────► │  /api/* 函数          │
-└─────────────┘                      └────────┬─────────────┘
-                                              │
-                                     HTML / JSON 响应
-                                              │
-                                     ┌────────▼─────────────┐
-                                     │  浏览器               │
-                                     │  - 页面渲染           │
-                                     │  - SPA 导航           │
-                                     │  - localStorage 收藏  │
-                                     └──────────────────────┘
+Notion Database
+  -> Notion API
+    -> Vercel Serverless
+      -> /api/posts-data
+      -> /api/post-data
+      -> /api/post
+      -> /api/sitemap
+        -> Browser
+          -> HTML 首屏
+          -> 轻量 SPA 导航
+          -> localStorage 收藏
 ```
 
-## 2. 部署拓扑
+## 2. 部署与路由
 
-### 2.1 角色分工
-
-| 角色 | 职责 | 不负责 |
-|------|------|--------|
-| Cloudflare | `0000068.xyz` DNS 记录 | 应用运行、CDN 缓存 |
-| Vercel | 静态文件托管、Serverless API、页面重写 | — |
-| Notion | CMS 数据库 + 文章块内容 | 渲染、缓存 |
-
-### 2.2 域名
+### 2.1 域名
 
 | 域名 | 用途 |
-|------|------|
+|---|---|
 | `https://www.0000068.xyz` | 主生产域名 |
 | `https://0000068.xyz` | 301 跳转到 `www` |
-| `https://*.vercel.app` | Vercel 部署后自动分配的默认域名（示例：`share-everything-sigma.vercel.app`） |
+| `https://*.vercel.app` | Vercel 默认部署域名 |
 
-### 2.3 Vercel 配置 (`vercel.json`)
+### 2.2 Vercel 路由
 
-**路由重写**：
-
-| 入站路径 | 目标 | 意义 |
-|---------|------|------|
+| 入口路径 | 目标 | 说明 |
+|---|---|---|
 | `/sitemap.xml` | `/api/sitemap` | 动态站点地图 |
-| `/posts/:id` | `/api/post?id=:id` | 详情页走 SSR |
-| `/post.html` | `/api/post` | 模板入口重写 |
+| `/posts/:id` | `/api/post?id=:id` | 文章详情 SSR |
+| `/post.html` | `/api/post` | 详情模板入口重写 |
 
-**缓存策略**：
+### 2.3 缓存策略
 
 | 资源 | Cache-Control |
-|------|---------------|
-| JS / CSS / HTML | `public, max-age=0, must-revalidate` |
-| `favicon.png` | `public, max-age=86400`（1 天） |
-| API 接口 | `no-store` |
+|---|---|
+| HTML / CSS / JS | `public, max-age=0, must-revalidate` |
+| `favicon.png` | `public, max-age=86400` |
+| API | `no-store` |
 
-**CSP 策略**：
-
-| 指令 | 值 | 说明 |
-|------|----|------|
-| `default-src` | `'self'` | 默认只允许同源 |
-| `script-src` | `'self'` | 仅加载本站脚本 |
-| `style-src` | `'self' 'unsafe-inline' https://fonts.googleapis.cn` | Google Fonts |
-| `img-src` | `'self' https: data: blob:` | 支持 Notion 外部图片 |
-| `font-src` | `'self' https://fonts.gstatic.cn data:` | Google Fonts |
-| `connect-src` | `'self' https:` | 浏览器 fetch API 数据 |
-| `frame-src` | `'self' https:` | 文章内 embed（YouTube 等） |
-| `object-src` | `'none'` | 禁止插件对象 |
-| `base-uri` | `'self'` | 防 base 标签劫持 |
-| `frame-ancestors` | `'none'` | 禁止被 iframe 嵌入 |
-
-**部署区域**：`hkg1`
+补充：
+- `GET/HEAD` 之外的方法统一通过共享 helper 返回 `405`
+- 所有公开 API 的 `405` 也显式带 `Cache-Control: no-store`
 
 ## 3. 仓库结构
 
 ```text
 .
-├─ index.html                 首页
-├─ blog.html                  列表页
-├─ post.html                  详情页模板（SSR 注入）
-├─ vercel.json                路由重写 + 响应头 + 区域
-├─ package.json               Node ≥ 18，定义 npm run check
-├─ robots.txt                 爬虫规则
-├─ favicon.png                站点图标 / 默认分享图
-│
-├─ api/                       Vercel Serverless 函数
-│  ├─ posts-data.js           文章列表 JSON
-│  ├─ post-data.js            单篇文章 JSON
-│  ├─ post.js                 详情页 SSR HTML
-│  ├─ sitemap.js              动态站点地图
-│  └─ notion.js               已废弃（返回 410）
-│
-├─ server/                    服务端共享逻辑
-│  ├─ notion-server.js        Notion 服务层（查询、缓存、渲染）
-│  └─ public-content.js       错误处理与响应辅助
-│
-├─ js/                        浏览器脚本
-│  ├─ common.js               粒子动画 + 光标效果 + SPA 路由 + SEO
-│  ├─ notion-content.js       Notion 内容映射与渲染（前后端共享）
-│  ├─ runtime-core.js         共享运行时核心（StructuredData / PageProgress / PageRuntime / focus）
-│  ├─ notion-api.js           浏览器侧数据访问层
-│  ├─ blog-page.js            列表页
-│  ├─ post-page.js            详情页
-│  ├─ index-page.js           首页
-│  ├─ bookmark.js             收藏（localStorage）
-│  └─ font-loader.js          延迟字体加载
-│
+├─ index.html
+├─ blog.html
+├─ post.html
+├─ vercel.json
+├─ robots.txt
+├─ favicon.png
+├─ SITE_ARCHITECTURE.md
+├─ .gitattributes
+├─ api/
+│  ├─ posts-data.js
+│  ├─ post-data.js
+│  ├─ post.js
+│  ├─ sitemap.js
+│  └─ notion.js
+├─ server/
+│  ├─ notion-server.js
+│  └─ public-content.js
+├─ js/
+│  ├─ notion-content.js
+│  ├─ runtime-core.js
+│  ├─ site-utils.js
+│  ├─ common.js
+│  ├─ ui-effects.js
+│  ├─ seo-meta.js
+│  ├─ spa-router.js
+│  ├─ notion-api.js
+│  ├─ bookmark.js
+│  ├─ index-page.js
+│  ├─ blog-page.js
+│  ├─ post-page.js
+│  └─ font-loader.js
 ├─ css/
-│  ├─ style.css               全站基础样式
-│  ├─ blog-page.css           列表页补充
-│  └─ post-page.css           详情页补充
-│
+│  ├─ style.css
+│  ├─ blog-page.css
+│  └─ post-page.css
 └─ scripts/
-   ├─ smoke-check.mjs         回归检查（含 SSR / block fixture / 列表查询缓存 / 摘要缓存行为断言）
-   └─ fixtures/
-      └─ notion-block-fixtures.mjs
+   └─ smoke-check.mjs
 ```
 
-## 4. 页面运行链路
+## 4. 前端运行时分层
 
-### 4.1 首页 — `index.html`
+### 4.1 共享脚本加载策略
 
-- 真实 HTML 入口，不依赖 JS 即可打开
-- 搜索表单提交跳转 `/blog.html?search=...`
-- SPA 路由启用时，站内跳转由 `SPARouter` 接管
-- 脚本链路：`font-loader.js` + `notion-content.js` + `runtime-core.js` + `common.js` + `index-page.js`
+三个 HTML 页面都会先加载共享运行时脚本，并用 `data-spa-runtime` 标记：
 
-### 4.2 列表页 — `blog.html`
+- `font-loader.js`
+- `notion-content.js`
+- `runtime-core.js`
+- `site-utils.js`
+- `common.js`
+- `ui-effects.js`
+- `seo-meta.js`
+- `spa-router.js`
 
-**远端文章列表流程**：
+这样 `spa-router.js` 在首次页面切换后，只需要补加载页面专属脚本，不需要再硬编码一份“共享脚本名单”。
 
-```text
-blog-page.js → NotionAPI.queryPosts()
-  → fetch /api/posts-data
-    → notion-server.js queryPublicPosts()
-      → 优先命中过滤结果缓存（category + search）
-      → 否则复用公开摘要缓存 / 分类预过滤查询
-      → Notion API（带 2 分钟缓存）
-→ 浏览器渲染卡片列表
-```
+### 4.2 `runtime-core.js`
 
-**本地收藏流程**：切换到收藏视图时，直接读 `localStorage`，不请求服务端。收藏视图的 URL 状态使用 `#bookmarks` hash 维护（如 `/blog.html#bookmarks?search=...`），避免把本地视图暴露成可抓取的公开查询页。
+负责共享运行时基础能力：
 
-功能：分类过滤、搜索、分页、书签按钮、URL 状态同步。
-脚本链路：`font-loader.js` + `notion-content.js` + `runtime-core.js` + `common.js` + `notion-api.js` + `bookmark.js` + `blog-page.js`
+- `StructuredData`
+- `PageProgress`
+- `focusSpaContent`
+- `PageRuntime`
 
-### 4.3 详情页 — `/posts/:id`
+### 4.3 `site-utils.js`
 
-**首屏（SSR）**：
+负责轻量但高复用的站点工具：
 
-```text
-浏览器 → /posts/:id
-  → Vercel 重写 → /api/post?id=:id
-    → api/post.js
-      → fetchPublicPost()（带 60s LRU 缓存 + 同文并发请求去重）
-        → 请求 Notion /pages/:id + 递归拉 block 树
-      → 注入 post.html 模板
-      → 输出完整 HTML（SEO + structured data + 正文）
-```
+- 文章 canonical URL / path helper
+- blog 返回地址记忆
+- bookmark hash URL 构建与解析
+- 图片 URL 与分享图 URL 安全处理
+- `matchMedia` 兼容包装
 
-**二次运行（Hydration）**：
+### 4.4 `common.js`
 
-- `post-page.js` 读取 SSR 注入的 `#initialPostData`
-- 优先复用首屏内容，需要时走 `/api/post-data` 获取 JSON
-- `notion-api.js` 负责 JSON 拉取与摘要缓存，`bookmark.js` 负责收藏状态
-- JS 失败时 SSR 内容仍可展示
-- 脚本链路：`font-loader.js` + `notion-content.js` + `runtime-core.js` + `common.js` + `notion-api.js` + `bookmark.js` + `post-page.js`
+现在只负责粒子背景运行时：
 
-## 5. 前端代码
+- 画布初始化与重建
+- 粒子动画循环
+- 指针位置同步
+- 鼠标 / 触摸加速
+- `visibilitychange` / `pageshow` / resize 生命周期处理
 
-### 5.1 `runtime-core.js` + `common.js` — 运行时核心
+### 4.5 `ui-effects.js`
+
+负责界面交互效果：
+
+- cursor glow
+- blog card reveal
+- 文本选择清理等轻交互
+
+### 4.6 `seo-meta.js`
+
+负责运行时 SEO 标签同步：
+
+- `title`
+- `meta[name="description"]`
+- `og:*`
+- `canonical`
+- `robots`
+
+### 4.7 `spa-router.js`
+
+负责轻量 SPA 导航：
+
+- 站内点击拦截
+- HTML 片段替换
+- 页面级脚本 / 样式补加载
+- 页面预取与短期 HTML 缓存
+- `/index.html` 归一化为 `/`
+- 文章页与 blog 页之间的返回地址记忆
+
+### 4.8 `notion-content.js`
+
+这是前后端共享的内容渲染与映射层，负责：
+
+- Notion 数据库字段 schema 解析
+- `mapNotionPage`
+- block -> HTML 渲染
+- 搜索文本规范化
+- 安全转义与 URL 清洗
+- 共享 `Article` structured data builder
+
+补充：文章结构化数据现在只在这里定义一份，客户端与服务端共同复用，避免 schema 漂移。
+
+### 4.9 页面脚本
 
 | 文件 | 职责 |
-|------|------|
-| `runtime-core.js` | `StructuredData`、`PageProgress`、`focusSpaContent`、`PageRuntime` |
-| `common.js` | 粒子星空、光标跟随、`SiteUtils`（含 bookmark hash URL helper）、`updateSeoMeta`、`SPARouter` |
+|---|---|
+| `index-page.js` | 首页搜索与导航 |
+| `blog-page.js` | 列表查询、搜索、分页、分类、收藏列表、URL 同步 |
+| `post-page.js` | 文章 hydration、SEO 同步、书签按钮、SSR 容错 |
+| `bookmark.js` | 本地收藏存储与兼容旧数据补全 |
+| `notion-api.js` | 浏览器侧数据访问、摘要缓存、详情请求 |
 
-> 站点是“真实 HTML 入口 + 轻量 SPA 导航”的混合模式，不是纯 SPA。
+## 5. 页面运行链路
 
-### 5.2 `notion-content.js` — 内容渲染引擎（前后端共享）
+### 5.1 首页 `index.html`
 
-核心职责：Notion 页面属性 → 文章摘要、Notion block → HTML、共享搜索文本规范（`buildPostSearchText`）。
+- 是真实 HTML 入口，不依赖 JS 也能打开
+- 搜索表单提交到 `/blog.html?search=...`
+- 开启 SPA 后站内导航由 `SPARouter` 接管
 
-**标题降级策略**：
+### 5.2 列表页 `blog.html`
 
-| Notion block | 渲染为 | 原因 |
-|-------------|--------|------|
-| 页面标题 (`renderPostArticle`) | `<h1>` | 页面唯一 H1 |
-| `heading_1` | `<h2>` | 避免多 H1 影响 SEO |
-| `heading_2` | `<h3>` | — |
-| `heading_3` | `<h4>` | — |
+远程内容链路：
 
-**Embed 支持**：YouTube / Bilibili / Vimeo / Loom / CodePen / Figma → iframe。不支持的平台降级为链接块。
+```text
+blog-page.js
+  -> NotionAPI.queryPosts()
+    -> /api/posts-data
+      -> notion-server.js queryPublicPosts()
+        -> cache / filter / Notion API
+```
 
-### 5.3 `notion-api.js` — 浏览器数据访问层
+本地收藏链路：
 
-- 请求 `/api/posts-data` 和 `/api/post-data`
-- 两级文章摘要缓存：内存 Map（快查）+ sessionStorage（30 分钟 TTL，跨页面持久化，用于收藏补全）
-- 持久化摘要写入前会主动清理过期项，并压缩为较小 payload（移除 `_searchText`、裁剪长字段、丢弃临时/超长 `coverImage`）
-- 不保留响应缓存分支，公共内容走实时接口
+```text
+blog-page.js
+  -> bookmark.js
+    -> localStorage
+```
 
-### 5.4 其他页面脚本
+补充：
+- 收藏视图使用 `#bookmarks` hash 路由
+- 收藏视图 URL 形如 `/blog.html#bookmarks?search=...&page=...`
+- 不再通过公开 query 参数暴露本地收藏入口
+
+### 5.3 详情页 `/posts/:id`
+
+首屏：
+
+```text
+/posts/:id
+  -> /api/post?id=:id
+    -> fetchPublicPost()
+    -> renderPostContent()
+    -> 注入 post.html
+```
+
+二次运行：
+
+- `post-page.js` 先读取 SSR 注入的 `#initialPostData`
+- 必要时再请求 `/api/post-data`
+- `StructuredData`、SEO、书签状态在客户端继续接管
+- 即使 `NotionAPI` 失败，SSR 首屏内容仍可继续展示
+
+## 6. CSS 分层
 
 | 文件 | 职责 |
-|------|------|
-| `blog-page.js` | 分类切换、搜索、分页、卡片渲染、书签交互、URL 同步；收藏视图走 hash-only 路由 |
-| `post-page.js` | 首屏 hydration、书签按钮、返回列表、SEO 同步、SSR 容错；`NotionAPI` 失效时仍可用 SSR 注入的摘要数据维持收藏按钮 |
-| `bookmark.js` | 完全本地收藏系统（localStorage），含旧数据补全 |
-| `font-loader.js` | 延迟激活带 `data-deferred-fonts` 的字体样式，降低首屏阻塞 |
+|---|---|
+| `style.css` | 全站公共样式与首页基础样式 |
+| `blog-page.css` | 列表页专属布局与卡片样式 |
+| `post-page.css` | 详情页正文与书签样式 |
 
-## 6. 服务端代码
+这次拆分后：
 
-### 6.1 `notion-server.js` — 核心服务层
+- 首页不再加载 blog / post 的专属样式块
+- blog / post 的大块样式从共享 CSS 中移出
+- `blog-page.css` 已移除 `content-visibility: auto` 方案，避免影响 reveal 动画时机
 
-**缓存体系**：
+## 7. 服务端分层
 
-| 缓存对象 | 存储 | TTL | 容量 |
-|---------|------|-----|------|
-| 数据库 metadata + schema | 内存 | 5 分钟 | 1 条 |
-| 公开文章列表摘要 | 内存 | 2 分钟 | 1 条 |
-| 列表过滤结果（`category + search`） | 内存 Map | 跟随列表摘要 TTL | 24 组查询 |
-| 单篇文章（摘要 + blocks） | 内存 LRU | 60 秒 | 20 条 |
-| 单篇文章进行中请求 | 内存 Promise Map | 请求生命周期 | 同 cache key 1 条 |
+### 7.1 `notion-server.js`
 
-**安全机制**：
+核心职责：
 
-- Notion API 请求超时：12 秒（可配置）
-- 分页安全上限：`MAX_PAGINATION_ROUNDS = 50`（= 5000 条）
-- block 递归深度上限：10 层
-- block 并发拉取限制：4（可配置）
+- 数据库 metadata / schema 解析
+- 公开内容访问策略推导
+- 列表查询、搜索、分页
+- 详情获取
+- block 递归拉取与并发限制
+- SSR 详情页依赖的 HTML / structured data 构建
 
-**公开策略**：
+主要缓存：
 
-| 模式 | 条件 | 行为 |
-|------|------|------|
-| A. 整库公开（默认） | 未设置 `NOTION_PUBLIC_PROPERTY_NAME` / `NOTION_PUBLIC_PROPERTY_NAMES` | 整个数据库 = 公开内容库 |
-| B. 按字段控制 | 设置了 `NOTION_PUBLIC_PROPERTY_NAME` 或 `NOTION_PUBLIC_PROPERTY_NAMES` | 按 checkbox / status / select 字段匹配 |
+| 对象 | 位置 | TTL / 容量 |
+|---|---|---|
+| 数据库 metadata | 内存 | 5 分钟 |
+| 公开摘要列表 | 内存 | 2 分钟 |
+| 过滤结果 | 内存 Map | 跟随摘要缓存 |
+| 单篇文章详情 | 内存 LRU | 60 秒 / 20 条 |
+| 进行中的详情请求 | Promise Map | 请求生命周期 |
 
-补充：当公开字段类型为 `status` / `select` 时，可通过 `NOTION_PUBLIC_STATUS_VALUES` 显式指定公开状态；未指定时服务端会优先尝试常见“已发布/公开/Done/Complete”类状态值与分组名。
+### 7.2 `public-content.js`
 
-### 6.2 `public-content.js` — 错误处理层
+负责共享公开内容响应逻辑：
 
-统一处理 404 / 429 / 500 / 502 / 504 判断、错误序列化、`Retry-After` 透传。
+- query 参数读取
+- 错误状态映射
+- `Retry-After` 透传
+- 公开错误 payload 序列化
+- `rejectUnsupportedReadMethod()` 统一处理只读接口的 `405`
 
-### 6.3 API 接口一览
+### 7.3 API 一览
 
-| 接口 | 方法 | 功能 | 缓存 | 备注 |
-|------|------|------|------|------|
-| `/api/posts-data` | GET, HEAD | 文章列表 JSON | no-store | 接收 category / search / page |
-| `/api/post-data` | GET, HEAD | 单篇文章 JSON | no-store | 仅返回公开文章 |
-| `/api/post` | GET, HEAD | 详情页 SSR HTML | no-store | 注入 SEO + structured data |
-| `/api/sitemap` | GET, HEAD | 动态 sitemap XML | no-store | — |
-| `/api/notion` | — | **已废弃**（返回 410） | — | 防止误开通用代理 |
+| 路由 | 方法 | 功能 |
+|---|---|---|
+| `/api/posts-data` | `GET, HEAD` | 文章列表 JSON |
+| `/api/post-data` | `GET, HEAD` | 单篇文章 JSON |
+| `/api/post` | `GET, HEAD` | 文章详情 SSR HTML |
+| `/api/sitemap` | `GET, HEAD` | 动态 sitemap |
+| `/api/notion` | 任意 | 已禁用，固定返回 `410` |
 
-## 7. SEO 策略
+补充：
+- `/api/notion` 不再保留旧 CORS 透传逻辑
+- 响应固定 `no-store`
 
-| 层 | 实现 | 覆盖范围 |
-|----|------|---------|
-| 静态基础头 | HTML 模板内的 `title` / `meta` / `og:*` / `canonical` | 所有页面 |
-| 运行时更新 | `common.js` → `updateSeoMeta()` | SPA 导航后 |
-| 文章 SSR | `api/post.js` 服务端注入 | 文章详情页首屏 |
-| 结构化数据 | `Article` schema via `application/ld+json` | 文章详情页 |
-| robots.txt | 允许页面抓取，禁止 `/api/` | 全站 |
-| sitemap | `/sitemap.xml` → 动态生成 | 首页 + 列表页 + 所有公开文章 |
+## 8. SEO
 
-补充：本地收藏视图不再通过 `?category=收藏` 这类公开查询参数暴露入口；静态入口统一链接到 `/blog.html#bookmarks`，运行时再对收藏视图写入 `noindex, nofollow` 并把 canonical 收敛到公开列表页 `/blog.html`。
+SEO 由三层共同完成：
 
-## 8. 环境变量
+| 层 | 实现 |
+|---|---|
+| 静态模板 | HTML 中的初始 `title` / `meta` / `canonical` |
+| 运行时 | `seo-meta.js` 的 `updateSeoMeta()` |
+| 详情页 SSR | `api/post.js` 服务端注入 meta 与 `Article` JSON-LD |
+
+额外策略：
+
+- 本地收藏视图写入 `noindex, nofollow`
+- 收藏视图 canonical 收敛到 `/blog.html`
+- 详情页 structured data 统一使用共享 builder
+
+## 9. 测试与约束
+
+### 9.1 `scripts/smoke-check.mjs`
+
+当前覆盖的重点包括：
+
+- HTML 入口结构
+- 共享脚本声明
+- CSS 归属
+- bookmark hash 路由
+- SEO runtime
+- SPA router 启动行为
+- API 405 / `no-store`
+- 结构化数据共享逻辑
+- 失效代理 `/api/notion`
+
+### 9.2 换行规范
+
+`.gitattributes` 统一约束：
+
+- `*.html`
+- `*.css`
+- `*.js`
+- `*.mjs`
+- `*.json`
+- `*.xml`
+- `*.md`
+- `.gitattributes`
+
+都使用 LF。
+
+## 10. 环境变量
 
 ### 必需
 
 | 变量 | 说明 |
-|------|------|
+|---|---|
 | `NOTION_TOKEN` | Notion Integration Token |
 | `NOTION_DATABASE_ID` | 内容数据库 ID |
 
 ### 推荐
 
-| 变量 | 说明 | 示例 |
-|------|------|------|
-| `SITE_URL` | 生产主域名 | `https://www.0000068.xyz` |
+| 变量 | 说明 |
+|---|---|
+| `SITE_URL` | 生产主域名 |
 
-### 可选（含默认值）
+### 可选
 
 | 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `DATABASE_METADATA_TTL_MS` | 300,000（5 分钟） | 数据库 schema 缓存时长 |
-| `PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS` | 120,000（2 分钟） | 文章列表缓存时长 |
-| `PUBLIC_POST_CACHE_TTL_MS` | 60,000（1 分钟） | 单篇文章缓存时长 |
-| `NOTION_REQUEST_TIMEOUT_MS` | 12,000 | Notion API 超时 |
-| `NOTION_BLOCK_CHILD_CONCURRENCY` | 4 | block 并发拉取数 |
-| `NOTION_PUBLIC_PROPERTY_NAME` | —（整库公开） | 公开策略属性名 |
-| `NOTION_PUBLIC_PROPERTY_NAMES` | — | 多候选属性名 |
-| `NOTION_PUBLIC_STATUS_VALUES` | — | 自定义公开状态值 |
+|---|---|---|
+| `DATABASE_METADATA_TTL_MS` | `300000` | metadata 缓存时长 |
+| `PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS` | `120000` | 列表摘要缓存 |
+| `PUBLIC_POST_CACHE_TTL_MS` | `60000` | 单篇文章缓存 |
+| `NOTION_REQUEST_TIMEOUT_MS` | `12000` | 服务端 Notion 请求超时 |
+| `NOTION_BLOCK_CHILD_CONCURRENCY` | `4` | block 子节点抓取并发 |
+| `NOTION_PUBLIC_PROPERTY_NAME(S)` | 空 | 公共可见性字段名 |
+| `NOTION_PUBLIC_STATUS_VALUES` | 空 | 公共状态候选值 |
 
-### 内容字段候选名（可选）
+补充：
+- 浏览器侧 `notion-api.js` 当前请求超时为 `8000ms`
+- 服务端 `NOTION_REQUEST_TIMEOUT_MS` 仍是 `12000ms`
 
-| 变量 | 说明 |
-|------|------|
-| `NOTION_TITLE_PROPERTY_NAME` / `NOTION_TITLE_PROPERTY_NAMES` | 覆盖标题字段候选名 |
-| `NOTION_EXCERPT_PROPERTY_NAME` / `NOTION_EXCERPT_PROPERTY_NAMES` | 覆盖摘要字段候选名 |
-| `NOTION_READ_TIME_PROPERTY_NAME` / `NOTION_READ_TIME_PROPERTY_NAMES` | 覆盖阅读时长字段候选名 |
-| `NOTION_TAGS_PROPERTY_NAME` / `NOTION_TAGS_PROPERTY_NAMES` | 覆盖标签字段候选名 |
-| `NOTION_CATEGORY_PROPERTY_NAME` / `NOTION_CATEGORY_PROPERTY_NAMES` | 覆盖分类字段候选名 |
-| `NOTION_DATE_PROPERTY_NAME` / `NOTION_DATE_PROPERTY_NAMES` | 覆盖发布日期字段候选名 |
+## 11. 本次同步点
 
-### 已废弃
+本轮文档已同步以下代码变化：
 
-| 变量 | 说明 |
-|------|------|
-| `ALLOWED_ORIGINS` | 仅用于已禁用的 `api/notion.js`，主链路不依赖 |
-
-## 9. 变更记录
-
-### 第一轮复查
-
-- 主页面入口存在且结构完整
-- Vercel 重写规则正常
-- 文章详情 SSR 输出结构化数据与初始数据
-- embed 不再回退成白色通用卡片
-- 客户端数据层已移除无效响应缓存分支
-- 旧 Cloudflare Worker 已从仓库中移除
-
-### 第二轮修复（2026-04-14）
-
-| # | 修复内容 | 影响文件 |
-|---|---------|---------|
-| 1 | 文章列表缓存 TTL 15s → 120s | `notion-server.js` |
-| 2 | 详情页增加 60s LRU 缓存（20 条） | `notion-server.js` |
-| 3 | 分页安全上限 50 轮 | `notion-server.js` |
-| 4 | 正文 heading 降级（H1→h2, H2→h3, H3→h4） | `notion-content.js` |
-| 5 | 全部 API 支持 HEAD 请求 | 4 个 `api/*.js` |
-| 6 | 移除无用 `favicon.ico` 缓存规则 | `vercel.json` |
-| 7 | 删除空 `worker/` 残留目录 | 项目根目录 |
-
-### 第三轮修复（2026-04-17）
-
-| # | 修复内容 | 影响文件 |
-|---|---------|---------|
-| 1 | `fetchPublicPost` 增加同文并发请求去重，避免缓存未命中时重复请求同一篇 Notion 页面与 block 树 | `server/notion-server.js` |
-| 2 | 失败的进行中请求会在 settle 后清理，后续重试不会被已失败 Promise 污染 | `server/notion-server.js` |
-| 3 | `smoke-check` 新增行为断言，覆盖单篇文章并发复用与失败后重试恢复 | `scripts/smoke-check.mjs` |
-| 4 | 架构文档与代码审查文档同步更新到当前实现 | `SITE_ARCHITECTURE.md`、`CODE_REVIEW.md` |
-
-### 第四轮修复（2026-04-17）
-
-| # | 修复内容 | 影响文件 |
-|---|---------|---------|
-| 1 | 列表查询链路增加 `category + search` 过滤结果缓存，重复查询优先命中内存结果 | `server/notion-server.js` |
-| 2 | 文章搜索文本构建逻辑统一收口到 `notion-content.js`，服务端过滤、客户端摘要缓存、收藏搜索共用同一规范 | `js/notion-content.js`、`server/notion-server.js`、`js/notion-api.js`、`js/blog-page.js`、`js/bookmark.js` |
-| 3 | `sessionStorage` 摘要写入前主动清理过期项，并压缩持久化 payload 以降低配额风险 | `js/notion-api.js` |
-| 4 | `smoke-check` 新增行为断言，覆盖过滤查询缓存、session 摘要压缩与跨实例恢复 | `scripts/smoke-check.mjs` |
-
-### 第五轮修复（2026-04-17）
-
-| # | 修复内容 | 影响文件 |
-|---|---------|---------|
-| 1 | 拆出 `runtime-core.js`，将 `StructuredData`、`PageProgress`、`focusSpaContent`、`PageRuntime` 从 `common.js` 中独立 | `js/runtime-core.js`、`js/common.js` |
-| 2 | 修正列表过滤结果缓存 key，不再把不同语义的分类值错误复用为同一缓存结果 | `server/notion-server.js` |
-| 3 | `escapeHtml` 只保留 `notion-content.js` 一份共享实现，其他前端脚本直接复用 | `js/notion-content.js`、`js/notion-api.js`、`js/blog-page.js` |
-| 4 | 页面入口脚本链路与回归测试同步更新，覆盖新运行时模块与分类缓存语义 | `index.html`、`blog.html`、`post.html`、`scripts/smoke-check.mjs` |
-
-### 第六轮修复（2026-04-17）
-
-| # | 修复内容 | 影响文件 |
-|---|---------|---------|
-| 1 | 收藏视图从公开查询参数改为 hash-only 路由；静态入口不再暴露 `?category=收藏` 链接，降低抓取与分享污染风险 | `index.html`、`blog.html`、`post.html`、`js/common.js`、`js/index-page.js`、`js/blog-page.js` |
-| 2 | `blog-page.js` 收藏搜索改为复用共享搜索归一化规则，修复多空格查询在本地收藏视图下漏匹配的问题 | `js/blog-page.js` |
-| 3 | `post-page.js` 在 `NotionAPI` 不可用但 SSR 内容存在时，复用 `#initialPostData` 继续驱动收藏按钮，不再把收藏能力和详情 JSON 接口绑死 | `js/post-page.js` |
-| 4 | `smoke-check` 新增行为断言，覆盖旧收藏查询路由归一化、bookmark hash fallback 与详情页 SSR 收藏降级链路 | `scripts/smoke-check.mjs` |
-
-### 待后续迭代
-
-- 继续将 `common.js` 中的 particles / seo / router / site-utils 再细拆
-- 继续将低价值源码字符串断言迁移为行为断言
-- 移动端粒子系统按设备能力裁剪
-- CSS 按页面拆分关键样式
-
-## 10. 验证
-
-当前 `smoke-check` 已覆盖：
-
-- 模板与路由基础结构
-- Notion block fixture 渲染
-- SSR 注入安全性
-- 单篇文章并发请求去重与失败后重试恢复
-- 列表过滤查询缓存命中
-- 分类过滤缓存语义正确性
-- `sessionStorage` 摘要压缩与跨实例恢复
-- 旧收藏查询路由到 `#bookmarks` 的归一化
-- 收藏 hash 路由在无远端数据源时的本地兜底
-- 详情页在 `NotionAPI` 不可用时复用 SSR 摘要维持收藏按钮
-
-```bash
-npm run check
-# → Smoke check passed.
-```
-
-也可直接执行：
-
-```bash
-node scripts/smoke-check.mjs
-```
-
-在当前 Windows PowerShell 环境里如果遇到执行策略拦截 `npm`，可改用：
-
-```bash
-npm.cmd run check
-```
+- `common.js` 从“大一统运行时”收敛为粒子系统
+- 新增 `site-utils.js`、`ui-effects.js`、`seo-meta.js`、`spa-router.js`
+- CSS 拆分为 `style.css` / `blog-page.css` / `post-page.css`
+- `Article` structured data 改为共享 helper
+- API 只读方法守卫抽到 `public-content.js`
+- `api/notion.js` 精简为固定 `410` 禁用入口
+- 共享运行时脚本改为 `data-spa-runtime` 声明式标记
+- `.gitattributes` 补充 `*.mjs` 与文档自身 LF 规则

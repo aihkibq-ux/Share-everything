@@ -21,7 +21,7 @@
       data-deferred-fonts
     />
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.cn/css2?family=Inter:wght@300;400;500;600;700&family=Google+Sans:wght@400;500;700&display=swap" /></noscript>
-    <script src="/js/font-loader.js" defer></script>
+    <script src="/js/font-loader.js" data-spa-runtime defer></script>
     <link rel="icon" type="image/png" href="/favicon.png?v=2" />
     <link rel="stylesheet" href="/css/style.css" />
   </head>
@@ -47,7 +47,7 @@
       <section class="hero-section" id="hero">
         <h1 class="hero-title" data-page-focus>Share Everything</h1>
         <form class="hero-search" id="heroSearchForm" action="/blog.html" method="get">
-          <input type="search" id="heroSearch" name="search" aria-label="搜索文章" required />
+          <input type="search" id="heroSearch" name="search" aria-label="搜索文章" />
           <button class="search-icon" id="heroSearchSubmit" type="submit" aria-label="搜索文章">
             <svg
               aria-hidden="true"
@@ -122,9 +122,13 @@
       </div>
     </main>
 
-    <script src="/js/notion-content.js"></script>
-    <script src="/js/runtime-core.js"></script>
-    <script src="/js/common.js"></script>
+    <script src="/js/notion-content.js" data-spa-runtime></script>
+    <script src="/js/runtime-core.js" data-spa-runtime></script>
+    <script src="/js/site-utils.js" data-spa-runtime></script>
+    <script src="/js/common.js" data-spa-runtime></script>
+    <script src="/js/ui-effects.js" data-spa-runtime></script>
+    <script src="/js/seo-meta.js" data-spa-runtime></script>
+    <script src="/js/spa-router.js" data-spa-runtime></script>
     <script src="/js/index-page.js"></script>
   </body>
 </html>

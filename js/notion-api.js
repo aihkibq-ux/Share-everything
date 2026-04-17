@@ -8,7 +8,7 @@ const NotionAPI = (() => {
     postEndpoint: "/api/post-data",
     pageSize: 9,
   };
-  const REQUEST_TIMEOUT = 12000;
+  const REQUEST_TIMEOUT = 8000;
   const POST_SUMMARY_CACHE_PREFIX = "notion_post_summary_";
   const POSTS_REQUEST_KEY_PREFIX = "notion_query_posts";
   const POST_REQUEST_KEY_PREFIX = "notion_page_";
