@@ -1,6 +1,6 @@
 # Share Everything — 网站架构文档
 
-> 更新时间：2026-04-15
+> 更新时间：2026-04-17
 
 ## 1. 架构概述
 
@@ -113,8 +113,9 @@
 │  └─ public-content.js       错误处理与响应辅助
 │
 ├─ js/                        浏览器脚本
-│  ├─ common.js               粒子动画 + 光标效果 + SPA 路由 + SEO + 运行时
+│  ├─ common.js               粒子动画 + 光标效果 + SPA 路由 + SEO
 │  ├─ notion-content.js       Notion 内容映射与渲染（前后端共享）
+│  ├─ runtime-core.js         共享运行时核心（StructuredData / PageProgress / PageRuntime / focus）
 │  ├─ notion-api.js           浏览器侧数据访问层
 │  ├─ blog-page.js            列表页
 │  ├─ post-page.js            详情页
@@ -128,7 +129,7 @@
 │  └─ post-page.css           详情页补充
 │
 └─ scripts/
-   ├─ smoke-check.mjs         回归检查（含 SSR / block fixture / 并发去重行为断言）
+   ├─ smoke-check.mjs         回归检查（含 SSR / block fixture / 列表查询缓存 / 摘要缓存行为断言）
    └─ fixtures/
       └─ notion-block-fixtures.mjs
 ```
@@ -140,7 +141,7 @@
 - 真实 HTML 入口，不依赖 JS 即可打开
 - 搜索表单提交跳转 `/blog.html?search=...`
 - SPA 路由启用时，站内跳转由 `SPARouter` 接管
-- 脚本链路：`font-loader.js` + `notion-content.js` + `common.js` + `index-page.js`
+- 脚本链路：`font-loader.js` + `notion-content.js` + `runtime-core.js` + `common.js` + `index-page.js`
 
 ### 4.2 列表页 — `blog.html`
 
@@ -150,6 +151,8 @@
 blog-page.js → NotionAPI.queryPosts()
   → fetch /api/posts-data
     → notion-server.js queryPublicPosts()
+      → 优先命中过滤结果缓存（category + search）
+      → 否则复用公开摘要缓存 / 分类预过滤查询
       → Notion API（带 2 分钟缓存）
 → 浏览器渲染卡片列表
 ```
@@ -157,7 +160,7 @@ blog-page.js → NotionAPI.queryPosts()
 **本地收藏流程**：分类切换到"收藏"时，直接读 `localStorage`，不请求服务端。
 
 功能：分类过滤、搜索、分页、书签按钮、URL 状态同步。
-脚本链路：`font-loader.js` + `notion-content.js` + `common.js` + `notion-api.js` + `bookmark.js` + `blog-page.js`
+脚本链路：`font-loader.js` + `notion-content.js` + `runtime-core.js` + `common.js` + `notion-api.js` + `bookmark.js` + `blog-page.js`
 
 ### 4.3 详情页 — `/posts/:id`
 
@@ -179,28 +182,22 @@ blog-page.js → NotionAPI.queryPosts()
 - 优先复用首屏内容，需要时走 `/api/post-data` 获取 JSON
 - `notion-api.js` 负责 JSON 拉取与摘要缓存，`bookmark.js` 负责收藏状态
 - JS 失败时 SSR 内容仍可展示
-- 脚本链路：`font-loader.js` + `notion-content.js` + `common.js` + `notion-api.js` + `bookmark.js` + `post-page.js`
+- 脚本链路：`font-loader.js` + `notion-content.js` + `runtime-core.js` + `common.js` + `notion-api.js` + `bookmark.js` + `post-page.js`
 
 ## 5. 前端代码
 
-### 5.1 `common.js` — 运行时核心
+### 5.1 `runtime-core.js` + `common.js` — 运行时核心
 
-| 模块 | 职责 |
+| 文件 | 职责 |
 |------|------|
-| 粒子星空 | Canvas 星空背景动画、鼠标视差、点击加速效果 |
-| 光标跟随 | 桌面端光标发光效果（fine pointer + 无减弱动画时启用） |
-| `SiteUtils` | URL 解析构建、返回地址记忆、图片安全处理 |
-| `updateSeoMeta` | SPA 导航后动态更新 title / description / OG / canonical / robots |
-| `StructuredData` | 写入和清除 `application/ld+json` |
-| `PageProgress` | 页面加载进度条（trickle + finish 模式） |
-| `PageRuntime` | 根据 URL 注册和初始化对应页面模块（index / blog / post） |
-| `SPARouter` | 站内链接拦截、HTML 预取与缓存、`#spa-content` 局部替换、切换动画与焦点管理 |
+| `runtime-core.js` | `StructuredData`、`PageProgress`、`focusSpaContent`、`PageRuntime` |
+| `common.js` | 粒子星空、光标跟随、`SiteUtils`、`updateSeoMeta`、`SPARouter` |
 
 > 站点是“真实 HTML 入口 + 轻量 SPA 导航”的混合模式，不是纯 SPA。
 
 ### 5.2 `notion-content.js` — 内容渲染引擎（前后端共享）
 
-核心职责：Notion 页面属性 → 文章摘要、Notion block → HTML。
+核心职责：Notion 页面属性 → 文章摘要、Notion block → HTML、共享搜索文本规范（`buildPostSearchText`）。
 
 **标题降级策略**：
 
@@ -217,6 +214,7 @@ blog-page.js → NotionAPI.queryPosts()
 
 - 请求 `/api/posts-data` 和 `/api/post-data`
 - 两级文章摘要缓存：内存 Map（快查）+ sessionStorage（30 分钟 TTL，跨页面持久化，用于收藏补全）
+- 持久化摘要写入前会主动清理过期项，并压缩为较小 payload（移除 `_searchText`、裁剪长字段、丢弃临时/超长 `coverImage`）
 - 不保留响应缓存分支，公共内容走实时接口
 
 ### 5.4 其他页面脚本
@@ -238,6 +236,7 @@ blog-page.js → NotionAPI.queryPosts()
 |---------|------|-----|------|
 | 数据库 metadata + schema | 内存 | 5 分钟 | 1 条 |
 | 公开文章列表摘要 | 内存 | 2 分钟 | 1 条 |
+| 列表过滤结果（`category + search`） | 内存 Map | 跟随列表摘要 TTL | 24 组查询 |
 | 单篇文章（摘要 + blocks） | 内存 LRU | 60 秒 | 20 条 |
 | 单篇文章进行中请求 | 内存 Promise Map | 请求生命周期 | 同 cache key 1 条 |
 
@@ -359,10 +358,27 @@ blog-page.js → NotionAPI.queryPosts()
 | 3 | `smoke-check` 新增行为断言，覆盖单篇文章并发复用与失败后重试恢复 | `scripts/smoke-check.mjs` |
 | 4 | 架构文档与代码审查文档同步更新到当前实现 | `SITE_ARCHITECTURE.md`、`CODE_REVIEW.md` |
 
+### 第四轮修复（2026-04-17）
+
+| # | 修复内容 | 影响文件 |
+|---|---------|---------|
+| 1 | 列表查询链路增加 `category + search` 过滤结果缓存，重复查询优先命中内存结果 | `server/notion-server.js` |
+| 2 | 文章搜索文本构建逻辑统一收口到 `notion-content.js`，服务端过滤、客户端摘要缓存、收藏搜索共用同一规范 | `js/notion-content.js`、`server/notion-server.js`、`js/notion-api.js`、`js/blog-page.js`、`js/bookmark.js` |
+| 3 | `sessionStorage` 摘要写入前主动清理过期项，并压缩持久化 payload 以降低配额风险 | `js/notion-api.js` |
+| 4 | `smoke-check` 新增行为断言，覆盖过滤查询缓存、session 摘要压缩与跨实例恢复 | `scripts/smoke-check.mjs` |
+
+### 第五轮修复（2026-04-17）
+
+| # | 修复内容 | 影响文件 |
+|---|---------|---------|
+| 1 | 拆出 `runtime-core.js`，将 `StructuredData`、`PageProgress`、`focusSpaContent`、`PageRuntime` 从 `common.js` 中独立 | `js/runtime-core.js`、`js/common.js` |
+| 2 | 修正列表过滤结果缓存 key，不再把不同语义的分类值错误复用为同一缓存结果 | `server/notion-server.js` |
+| 3 | `escapeHtml` 只保留 `notion-content.js` 一份共享实现，其他前端脚本直接复用 | `js/notion-content.js`、`js/notion-api.js`、`js/blog-page.js` |
+| 4 | 页面入口脚本链路与回归测试同步更新，覆盖新运行时模块与分类缓存语义 | `index.html`、`blog.html`、`post.html`、`scripts/smoke-check.mjs` |
+
 ### 待后续迭代
 
-- `common.js` 按职责拆分（router / seo / page-runtime / site-utils）
-- `escapeHtml` 三处重复定义合并
+- 继续将 `common.js` 中的 particles / seo / router / site-utils 再细拆
 - 继续将低价值源码字符串断言迁移为行为断言
 - 移动端粒子系统按设备能力裁剪
 - CSS 按页面拆分关键样式
@@ -375,6 +391,9 @@ blog-page.js → NotionAPI.queryPosts()
 - Notion block fixture 渲染
 - SSR 注入安全性
 - 单篇文章并发请求去重与失败后重试恢复
+- 列表过滤查询缓存命中
+- 分类过滤缓存语义正确性
+- `sessionStorage` 摘要压缩与跨实例恢复
 
 ```bash
 npm run check

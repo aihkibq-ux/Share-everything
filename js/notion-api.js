@@ -13,6 +13,14 @@ const NotionAPI = (() => {
   const POSTS_REQUEST_KEY_PREFIX = "notion_query_posts";
   const POST_REQUEST_KEY_PREFIX = "notion_page_";
   const POST_SUMMARY_CACHE_TTL = 1000 * 60 * 30;
+  const POST_SUMMARY_SESSION_MAX_TITLE_LENGTH = 160;
+  const POST_SUMMARY_SESSION_MAX_EXCERPT_LENGTH = 320;
+  const POST_SUMMARY_SESSION_MAX_CATEGORY_LENGTH = 48;
+  const POST_SUMMARY_SESSION_MAX_READ_TIME_LENGTH = 48;
+  const POST_SUMMARY_SESSION_MAX_TAGS = 8;
+  const POST_SUMMARY_SESSION_MAX_TAG_LENGTH = 48;
+  const POST_SUMMARY_SESSION_MAX_COVER_IMAGE_LENGTH = 320;
+  const POST_SUMMARY_SESSION_MAX_GRADIENT_LENGTH = 160;
   const FALLBACK_REMOTE_BLOG_CATEGORIES = [
     { name: "全部", emoji: "📋", color: "cyan" },
     { name: "精选", emoji: "🌟", color: "pink" },
@@ -35,19 +43,17 @@ const NotionAPI = (() => {
     color: "#00e5ff",
     border: "rgba(0, 229, 255, 0.2)",
   };
+  const escapeHtml = sharedContent.escapeHtml;
 
-  function escapeHtml(value) {
-    if (typeof sharedContent.escapeHtml === "function") {
-      return sharedContent.escapeHtml(value);
+  function normalizeSearchText(value) {
+    if (typeof sharedContent.normalizeSearchText === "function") {
+      return sharedContent.normalizeSearchText(value);
     }
 
-    if (!value) return "";
-    return String(value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
+    return String(value ?? "")
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, " ");
   }
 
   function gradientForCategory(category) {
@@ -80,6 +86,18 @@ const NotionAPI = (() => {
     }
 
     return "";
+  }
+
+  function buildPostSearchText(post) {
+    if (typeof sharedContent.buildPostSearchText === "function") {
+      return sharedContent.buildPostSearchText(post);
+    }
+
+    return normalizeSearchText([
+      post?.title || "",
+      post?.excerpt || "",
+      ...(Array.isArray(post?.tags) ? post.tags : []),
+    ].join(" "));
   }
 
   function createRequestError(message, { status, notionCode, code, detail } = {}) {
@@ -148,6 +166,21 @@ const NotionAPI = (() => {
     return entries.sort((left, right) => left.timestamp - right.timestamp);
   }
 
+  function removeExpiredPostSummaryCacheEntries(maxAge = POST_SUMMARY_CACHE_TTL, excludeKey) {
+    if (!(maxAge > 0)) return 0;
+
+    const expirationThreshold = Date.now() - maxAge;
+    let removedCount = 0;
+    collectPostSummaryCacheEntries(excludeKey).forEach((entry) => {
+      if (entry.timestamp > 0 && entry.timestamp < expirationThreshold) {
+        removeCacheEntry(entry.key);
+        removedCount += 1;
+      }
+    });
+
+    return removedCount;
+  }
+
   function trySetSessionCacheItem(key, payload) {
     try {
       sessionStorage.setItem(key, payload);
@@ -170,8 +203,73 @@ const NotionAPI = (() => {
     }
   }
 
+  function truncateText(value, maxLength, fallback = "") {
+    const normalizedValue = typeof value === "string" ? value.trim() : "";
+    if (!normalizedValue) return fallback;
+    return normalizedValue.length > maxLength
+      ? normalizedValue.slice(0, maxLength).trim()
+      : normalizedValue;
+  }
+
+  function normalizeSessionTags(tags) {
+    if (!Array.isArray(tags)) return [];
+
+    return tags
+      .map((tag) => truncateText(tag, POST_SUMMARY_SESSION_MAX_TAG_LENGTH))
+      .filter(Boolean)
+      .slice(0, POST_SUMMARY_SESSION_MAX_TAGS);
+  }
+
+  function normalizeSessionCoverImage(coverImage) {
+    const safeImageUrl =
+      typeof sharedContent.resolveDisplayImageUrl === "function"
+        ? sharedContent.resolveDisplayImageUrl(coverImage, window.location.origin)
+        : typeof coverImage === "string" && coverImage.trim()
+          ? coverImage.trim()
+          : null;
+
+    if (!safeImageUrl || safeImageUrl.length > POST_SUMMARY_SESSION_MAX_COVER_IMAGE_LENGTH) {
+      return null;
+    }
+
+    if (
+      typeof sharedContent.isLikelyEphemeralAssetUrl === "function" &&
+      sharedContent.isLikelyEphemeralAssetUrl(safeImageUrl, window.location.origin)
+    ) {
+      return null;
+    }
+
+    return safeImageUrl;
+  }
+
+  function compactPostSummaryForSession(data) {
+    const summary = normalizePostSummary(data);
+    if (!summary) return data;
+
+    return {
+      id: summary.id,
+      title: truncateText(summary.title, POST_SUMMARY_SESSION_MAX_TITLE_LENGTH, "Untitled"),
+      excerpt: truncateText(summary.excerpt, POST_SUMMARY_SESSION_MAX_EXCERPT_LENGTH),
+      category: truncateText(summary.category, POST_SUMMARY_SESSION_MAX_CATEGORY_LENGTH),
+      date: truncateText(summary.date, 32),
+      readTime: truncateText(summary.readTime, POST_SUMMARY_SESSION_MAX_READ_TIME_LENGTH),
+      coverImage: normalizeSessionCoverImage(summary.coverImage),
+      coverEmoji: truncateText(summary.coverEmoji, 8, "📝"),
+      coverGradient: truncateText(summary.coverGradient, POST_SUMMARY_SESSION_MAX_GRADIENT_LENGTH),
+      tags: normalizeSessionTags(summary.tags),
+    };
+  }
+
   function writeSessionCache(key, data, timestamp = Date.now()) {
-    const payload = JSON.stringify({ timestamp, data });
+    const payload = JSON.stringify({
+      timestamp,
+      data: compactPostSummaryForSession(data),
+    });
+
+    removeExpiredPostSummaryCacheEntries(POST_SUMMARY_CACHE_TTL, key);
+    if (trySetSessionCacheItem(key, payload)) return;
+
+    removeExpiredPostSummaryCacheEntries(POST_SUMMARY_CACHE_TTL, key);
     if (trySetSessionCacheItem(key, payload)) return;
 
     const existingEntries = collectPostSummaryCacheEntries(key);
@@ -210,7 +308,7 @@ const NotionAPI = (() => {
       coverEmoji,
       coverGradient,
       tags,
-      _searchText: post._searchText || [title, excerpt, ...tags].join(" ").toLowerCase(),
+      _searchText: post._searchText || buildPostSearchText({ title, excerpt, tags }),
     };
   }
 

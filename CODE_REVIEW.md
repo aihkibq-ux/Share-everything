@@ -11,10 +11,10 @@
 | 属性 | 值 |
 |-----|---|
 | 类型 | 可扩展性 |
-| 状态 | 已缓解：`PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS` 已从 15s 提升到 120s |
+| 状态 | 已进一步缓解：列表摘要缓存提升到 120s，并新增按 `category + search` 复用的过滤结果缓存 |
 | 影响文件 | [notion-server.js](file:///c:/Users/x/Documents/anti1/server/notion-server.js) |
 
-`queryDatabasePages` 用 `do...while` 把整个数据库所有公开文章一次全拉下来（每页 100，翻页到底），然后在 `loadPublicPagesForQuery` 和 `queryPublicPosts` 才做本地分类过滤、搜索过滤和分页切片。现有 `publicPageSummaryCache`（TTL 120s）能缓解短时重复调用。
+`queryDatabasePages` 用 `do...while` 把整个数据库所有公开文章一次全拉下来（每页 100，翻页到底），然后在 `loadPublicPagesForQuery` 和 `queryPublicPosts` 才做本地分类过滤、搜索过滤和分页切片。现有 `publicPageSummaryCache`（TTL 120s）已能缓解短时重复调用；本轮又补上了过滤结果缓存，相同 `category + search` 组合在 TTL 内不会重复跑一次远端 category 查询或本地过滤链路。
 
 **后续优化方向（更大规模时）：**
 - 更多场景下把 `categoryFilter` 下推到 Notion API 的 `filter` 参数
@@ -75,22 +75,24 @@
 | 属性 | 值 |
 |-----|---|
 | 类型 | 可维护性 |
-| 影响文件 | [common.js](file:///c:/Users/x/Documents/anti1/js/common.js)（当前约 1180 行）、[notion-content.js](file:///c:/Users/x/Documents/anti1/js/notion-content.js)（图片 URL 清洗与分享图回退相关段落） |
+| 状态 | 已进一步缓解：`StructuredData` / `PageProgress` / `focusSpaContent` / `PageRuntime` 已拆到 `runtime-core.js`，但 `common.js` 仍承担 particles / seo / router / site-utils 主链路 |
+| 影响文件 | [common.js](file:///c:/Users/x/Documents/anti1/js/common.js)、[runtime-core.js](file:///c:/Users/x/Documents/anti1/js/runtime-core.js)、[notion-content.js](file:///c:/Users/x/Documents/anti1/js/notion-content.js) |
 
-`common.js` 同时管粒子系统、光标追踪、SEO、结构化数据、进度条、焦点管理、PageRuntime、SPARouter（8 个职责域）。图片/分享图处理函数在 `common.js` 和 `notion-content.js` 两边各实现了一套，`common.js` 甚至会优先委托给 `NotionContent` 版本。
+`common.js` 之前同时管粒子系统、光标追踪、SEO、结构化数据、进度条、焦点管理、PageRuntime、SPARouter（8 个职责域）。现在共享运行时已拆成 `runtime-core.js` + `common.js` 两层：前者负责结构化数据、页面进度、焦点与页面注册，后者保留粒子、SEO、站点工具和 SPA 路由；维护压力已下降，但还没完全细拆到更小模块。
 
 **修复方向：** 按文档已提出的方向拆分（router / seo / page-runtime / site-utils）。
 
 ---
 
-### 7. `escapeHtml` 重复定义 3 份
+### 7. ✅ 已修复｜`escapeHtml` 重复定义 3 份
 
 | 属性 | 值 |
 |-----|---|
 | 类型 | 可维护性 |
+| 状态 | 已修复：前端改为直接复用 `notion-content.js` 暴露的共享 `escapeHtml` |
 | 影响文件 | `notion-content.js`、`notion-api.js`、`blog-page.js` |
 
-三个文件各有一份近乎相同的 `escapeHtml` fallback 实现。有防御价值但增加维护负担。
+`escapeHtml` 现在只保留 `notion-content.js` 一份实现；`notion-api.js` 与 `blog-page.js` 只消费共享 helper，不再各自保留近似重复的 fallback。
 
 ---
 
@@ -101,7 +103,7 @@
 | 属性 | 值 |
 |-----|---|
 | 类型 | 测试可维护性 |
-| 状态 | 已缓解：已补充行为断言覆盖单篇文章并发去重与失败后重试，仍有部分源码字符串断言待继续迁移 |
+| 状态 | 已进一步缓解：新增行为断言覆盖过滤查询缓存、session 摘要压缩/恢复、共享搜索文本规范；仍有部分源码字符串断言待继续迁移 |
 | 影响文件 | [smoke-check.mjs:445](file:///c:/Users/x/Documents/anti1/scripts/smoke-check.mjs#L445)、[L788](file:///c:/Users/x/Documents/anti1/scripts/smoke-check.mjs#L788)、[L855](file:///c:/Users/x/Documents/anti1/scripts/smoke-check.mjs#L855) |
 
 大量 `expectIncludes(sourceCode, "某段字符串")` 断言测的是实现细节而非行为。重构变量名、提取函数、精简代码时会产生大量测试噪音。
@@ -115,6 +117,24 @@
 - `fetchPublicPost` 增加同文并发请求去重，缓存未命中时只发起一次上游 Notion 页面与 block 树请求。
 - 新增失败后重试行为保障：进行中的失败 Promise 会在 settle 后清理，后续请求可重新拉取。
 - `smoke-check` 新增行为断言，直接验证“并发复用”和“失败后恢复”，不再只依赖源码字符串。
+
+---
+
+## 第四轮修复（2026-04-17）
+
+- 列表查询链路增加过滤结果缓存，相同 `category + search` 组合在 TTL 内可直接复用，降低重复查询与重复过滤成本。
+- 文章搜索文本构建逻辑统一收口到 `notion-content.js`，服务端列表过滤、客户端摘要缓存、收藏搜索共用同一规范。
+- `notion-api.js` 写入 `sessionStorage` 前会主动清理过期摘要，并对持久化摘要做压缩：移除派生 `_searchText`、裁剪长字段、丢弃临时/超长 `coverImage`。
+- `smoke-check` 新增行为断言，直接验证过滤查询缓存命中、session 摘要压缩与跨实例恢复，减少对源码字符串的依赖。
+
+---
+
+## 第五轮修复（2026-04-17）
+
+- 修正列表过滤缓存 key 语义，不再把不同大小写但语义不同的分类值错误复用为同一缓存结果。
+- 拆出 `runtime-core.js`，将 `StructuredData`、`PageProgress`、`focusSpaContent`、`PageRuntime` 从 `common.js` 中分离。
+- `escapeHtml` 只保留 `notion-content.js` 一份共享实现，减少前端重复 fallback。
+- `smoke-check` 新增回归覆盖，验证分类缓存语义、页面入口脚本链路与新运行时模块接入。
 
 ---
 
@@ -176,9 +196,10 @@
 | 属性 | 值 |
 |-----|---|
 | 类型 | 可靠性（低风险） |
+| 状态 | 已修复：写入前主动清理过期摘要，配额紧张时保存压缩版摘要并回退重试 |
 | 影响文件 | `notion-api.js` |
 
-文章摘要写入 `sessionStorage`，摘要多且 coverImage URL 长时可能接近 5MB 上限。已有 `collectPostSummaryCacheEntries` 清理逻辑，但未捕获 `QuotaExceededError` 后重试。
+文章摘要写入 `sessionStorage`，摘要多且 coverImage URL 长时可能接近 5MB 上限。现已在写入前主动清过期项，并将持久化摘要压缩为更小的数据形态；即使遇到配额压力，也会先尝试保留精简摘要而不是直接丢失缓存。
 
 ---
 
@@ -198,7 +219,7 @@
 | 优先级 | 总数 | 已修复 | 待处理 |
 |-------|------|--------|--------|
 | 🔴 高 | 3 | 3 | 0 |
-| 🟡 中 | 4 | 2 | 2 |
+| 🟡 中 | 4 | 3 | 1 |
 | 🟡 中低 | 1 | 0 | 1 |
-| 🟢 低 | 7 | 4 | 3 |
-| **合计** | **15** | **9** | **6** |
+| 🟢 低 | 7 | 5 | 2 |
+| **合计** | **15** | **11** | **4** |

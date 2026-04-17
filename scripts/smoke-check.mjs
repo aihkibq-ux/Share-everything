@@ -179,6 +179,59 @@ function createStorageMock(initialEntries = {}) {
     removeItem(key) {
       store.delete(key);
     },
+    clear() {
+      store.clear();
+    },
+    key(index) {
+      return Array.from(store.keys())[index] || null;
+    },
+    get length() {
+      return store.size;
+    },
+  };
+}
+
+function createQuotaLimitedStorageMock({ initialEntries = {}, maxChars = 1024 } = {}) {
+  const storage = createStorageMock(initialEntries);
+
+  return {
+    getItem(key) {
+      return storage.getItem(key);
+    },
+    setItem(key, value) {
+      const serializedValue = String(value);
+      const nextEntries = [];
+      for (let index = 0; index < storage.length; index += 1) {
+        const existingKey = storage.key(index);
+        if (existingKey == null || existingKey === key) continue;
+        nextEntries.push([existingKey, storage.getItem(existingKey) || ""]);
+      }
+      nextEntries.push([String(key), serializedValue]);
+
+      const totalChars = nextEntries.reduce(
+        (sum, [entryKey, entryValue]) => sum + String(entryKey).length + String(entryValue).length,
+        0,
+      );
+      if (totalChars > maxChars) {
+        const error = new Error("Quota exceeded");
+        error.name = "QuotaExceededError";
+        throw error;
+      }
+
+      storage.setItem(key, serializedValue);
+    },
+    removeItem(key) {
+      storage.removeItem(key);
+    },
+    clear() {
+      storage.clear();
+    },
+    key(index) {
+      return storage.key(index);
+    },
+    get length() {
+      return storage.length;
+    },
   };
 }
 
@@ -226,6 +279,8 @@ function loadBrowserScript(relativePath, overrides = {}) {
     cancelAnimationFrame: () => {},
     setTimeout,
     clearTimeout,
+    fetch: overrides.fetch || globalThis.fetch,
+    AbortController: overrides.AbortController || AbortController,
     ...overrides.window,
   };
   const documentObject = {
@@ -251,10 +306,13 @@ function loadBrowserScript(relativePath, overrides = {}) {
     URL,
     URLSearchParams,
     Promise,
+    AbortController: overrides.AbortController || AbortController,
+    fetch: overrides.fetch || globalThis.fetch,
     setTimeout,
     clearTimeout,
     requestAnimationFrame: windowObject.requestAnimationFrame,
     cancelAnimationFrame: windowObject.cancelAnimationFrame,
+    ...overrides.globals,
   };
 
   sandbox.globalThis = sandbox;
@@ -373,6 +431,7 @@ function escapeRegex(value) {
   "js/notion-content.js",
   "js/notion-api.js",
   "js/post-page.js",
+  "js/runtime-core.js",
   "api/notion.js",
   "api/posts-data.js",
   "api/post-data.js",
@@ -386,6 +445,7 @@ const blogHtml = read("blog.html");
 const postHtml = read("post.html");
 const vercelJson = read("vercel.json");
 const commonJs = read("js/common.js");
+const runtimeCoreJs = read("js/runtime-core.js");
 const blogPageJs = read("js/blog-page.js");
 const bookmarkJs = read("js/bookmark.js");
 const indexPageJs = read("js/index-page.js");
@@ -439,6 +499,9 @@ expectNotIncludes(postHtml, 'href="/index.html"', "post.html should avoid the du
 expectIncludes(indexHtml, 'src="/js/notion-content.js"', "index.html should load the shared notion content helpers");
 expectIncludes(blogHtml, 'src="/js/notion-content.js"', "blog.html should load the shared notion content helpers");
 expectIncludes(postHtml, 'src="/js/notion-content.js"', "post.html should load the shared notion content helpers");
+expectIncludes(indexHtml, 'src="/js/runtime-core.js"', "index.html should load the shared runtime core before page scripts");
+expectIncludes(blogHtml, 'src="/js/runtime-core.js"', "blog.html should load the shared runtime core before page scripts");
+expectIncludes(postHtml, 'src="/js/runtime-core.js"', "post.html should load the shared runtime core before page scripts");
 expectNoMalformedClosingTags(indexHtml, "index.html should not contain malformed closing tags");
 expectNoMalformedClosingTags(blogHtml, "blog.html should not contain malformed closing tags");
 expectNoMalformedClosingTags(postHtml, "post.html should not contain malformed closing tags");
@@ -447,12 +510,10 @@ expectIncludes(blogHtml, "data-page-focus", "blog.html should mark a focus targe
 expectIncludes(blogHtml, 'id="blogStatus"', "blog.html should include the live status region");
 expectIncludes(blogHtml, 'id="blogGrid" role="list"', "blog grid should expose list semantics");
 
-expectIncludes(commonJs, "page-progress", "common.js should wire the page progress bar");
 expectIncludes(commonJs, 'property="og:image"', "common.js should update og:image metadata");
 expectIncludes(commonJs, 'property="og:type"', "common.js should update og:type metadata");
 expectIncludes(commonJs, 'meta[name="robots"]', "common.js should manage robots metadata");
 expectIncludes(commonJs, '"touchcancel"', "common.js should reset particle acceleration on touchcancel");
-expectIncludes(commonJs, "focusSpaContent", "common.js should expose SPA focus management");
 expectIncludes(commonJs, "hasFreshPrefetch", "common.js should expire stale prefetched routes");
 expectIncludes(commonJs, "const sharedContent = window.NotionContent || {};", "common.js should delegate shared content policies to notion-content");
 expectIncludes(commonJs, "resolveDisplayImageUrl", "common.js should expose display-safe image URLs");
@@ -460,12 +521,19 @@ expectIncludes(commonJs, "resolveShareImageUrl", "common.js should normalize sta
 expectIncludes(commonJs, "getPostIdFromUrl", "common.js should expose canonical post URL helpers");
 expectIncludes(commonJs, "getPreferredBlogReturnUrl", "common.js should expose a preferred blog return helper");
 expectIncludes(commonJs, "rememberBlogReturnUrl", "common.js should persist the last blog listing route");
+expectIncludes(commonJs, "const PageProgress = window.PageProgress", "common.js should consume the shared page progress runtime helper");
+expectIncludes(commonJs, "const PageRuntime = window.PageRuntime", "common.js should consume the shared page runtime helper");
+expectIncludes(commonJs, "window.focusSpaContent", "common.js should consume the shared focus runtime helper");
 expectIncludes(commonJs, 'existingLink.hasAttribute("data-deferred-fonts")', "common.js should activate deferred font stylesheets that already exist in the DOM");
 expectIncludes(commonJs, "function isRouteHtmlCacheable(url)", "common.js should distinguish cacheable route HTML from live post routes");
 expectIncludes(commonJs, "const canCacheHtml = isRouteHtmlCacheable(routeKey);", "common.js should avoid caching post route HTML");
 expectIncludes(commonJs, 'if (!isRouteHtmlCacheable(routeKey)) return;', "common.js should skip prefetching post route HTML");
 expectIncludes(commonJs, 'resolved.pathname === "/index.html"', "common.js should normalize the duplicate /index.html home route");
 expectIncludes(commonJs, 'history.replaceState(null, "", resolveUrl(window.location.href).href);', "common.js should replace duplicate home URLs with the canonical root route");
+expectIncludes(runtimeCoreJs, 'application/ld+json', "runtime-core.js should own structured data script management");
+expectIncludes(runtimeCoreJs, "page-progress", "runtime-core.js should wire the shared page progress bar");
+expectIncludes(runtimeCoreJs, "focusSpaContent", "runtime-core.js should expose SPA focus management");
+expectIncludes(runtimeCoreJs, "const PageRuntime = (() => {", "runtime-core.js should own page module registration and cleanup");
 expectNotIncludes(commonJs, ':not([data-deferred-fonts])', "common.js should not skip deferred page font stylesheets during SPA navigation");
 assert.ok(
   !commonJs.includes("function warmPostDetail("),
@@ -687,6 +755,15 @@ const renamedSchema = notionContentHelpers.resolveNotionContentSchema({
 });
 assert.equal(renamedSchema.title?.name, "标题", "schema resolution should find renamed title properties");
 assert.equal(
+  notionContentHelpers.buildPostSearchText({
+    title: "  Shared Search  ",
+    excerpt: "Helper Text",
+    tags: ["TypeScript", "  Testing "],
+  }),
+  "shared search helper text typescript testing",
+  "shared notion content helpers should normalize reusable post search text consistently",
+);
+assert.equal(
   notionContentHelpers.mapNotionPage({
     id: "post-1",
     icon: { emoji: "🧪" },
@@ -818,16 +895,108 @@ assert.equal(
   "blog page should replace the current history entry while live search text changes",
 );
 blogPageCleanup?.();
-expectIncludes(notionApiJs, "collectPostSummaryCacheEntries", "notion cache should evict older post-summary entries on quota pressure");
+const staleSessionSummaryKey = "notion_post_summary_stale";
+const quotaSessionStorage = createQuotaLimitedStorageMock({
+  initialEntries: {
+    [staleSessionSummaryKey]: JSON.stringify({
+      timestamp: Date.now() - 1000 * 60 * 60,
+      data: {
+        id: "stale-post",
+        title: "Stale post",
+        excerpt: "x".repeat(240),
+      },
+    }),
+  },
+  maxChars: 760,
+});
+let notionApiFetchCount = 0;
+const notionApiHarness = loadBrowserScript("js/notion-api.js", {
+  window: {
+    location: new URL("https://example.com/blog.html"),
+    NotionContent: notionContentHelpers,
+  },
+  sessionStorage: quotaSessionStorage,
+  fetch: async (url) => {
+    notionApiFetchCount += 1;
+    assert.equal(
+      String(url),
+      "/api/post-data?id=session-post-1",
+      "notion client should request the semantic post data endpoint for detail fetches",
+    );
+
+    return createJsonResponse({
+      id: "session-post-1",
+      title: "Session cached title",
+      excerpt: "Session cached excerpt",
+      category: "技术",
+      date: "2026-04-17",
+      readTime: "5 min",
+      coverImage: `${ephemeralCoverImage}&padding=${"x".repeat(360)}`,
+      coverEmoji: "🧪",
+      coverGradient: "linear-gradient(135deg, #111111, #222222)",
+      tags: ["Alpha", "Beta", "Gamma"],
+      content: [],
+    });
+  },
+});
+const notionApiFetchedPost = await notionApiHarness.window.NotionAPI.getPost("session-post-1");
+assert.equal(
+  notionApiFetchCount,
+  1,
+  "notion client should issue exactly one network request for the uncached post detail",
+);
+assert.equal(
+  notionApiFetchedPost.id,
+  "session-post-1",
+  "notion client should still return the fetched post payload after compacting the summary cache entry",
+);
+const storedSessionSummaryRaw = quotaSessionStorage.getItem("notion_post_summary_session-post-1");
+assert.ok(
+  storedSessionSummaryRaw,
+  "notion client should persist a compacted post summary entry even when sessionStorage quota is tight",
+);
+const storedSessionSummary = JSON.parse(storedSessionSummaryRaw);
+assert.equal(
+  storedSessionSummary.data.coverImage,
+  null,
+  "notion client should drop session cover URLs when they are likely ephemeral or overly large",
+);
+assert.ok(
+  !Object.prototype.hasOwnProperty.call(storedSessionSummary.data, "_searchText"),
+  "notion client should avoid storing derived search text in the persisted session summary payload",
+);
+assert.equal(
+  quotaSessionStorage.getItem(staleSessionSummaryKey),
+  null,
+  "notion client should clear expired session summary entries before evicting fresher data under quota pressure",
+);
+const notionApiSessionReloadHarness = loadBrowserScript("js/notion-api.js", {
+  window: {
+    location: new URL("https://example.com/blog.html"),
+    NotionContent: notionContentHelpers,
+  },
+  sessionStorage: quotaSessionStorage,
+  fetch: async () => {
+    throw new Error("Unexpected network request while reading a persisted post summary");
+  },
+});
+const restoredSessionSummary = notionApiSessionReloadHarness.window.NotionAPI.getPostSummary("session-post-1");
+assert.equal(
+  restoredSessionSummary?.title,
+  "Session cached title",
+  "notion client should restore compacted session summaries without re-fetching the post detail",
+);
+assert.ok(
+  restoredSessionSummary?._searchText?.includes("alpha"),
+  "notion client should rebuild derived search text when reading a compacted summary back from sessionStorage",
+);
 expectIncludes(notionApiJs, "createRequestError", "notion client should preserve HTTP status metadata on failures");
 expectIncludes(notionApiJs, "error.status = Number(status);", "notion client should attach status codes to request errors");
 expectIncludes(notionApiJs, 'postsEndpoint: "/api/posts-data"', "notion client should load post listings from the semantic endpoint");
 expectIncludes(notionApiJs, 'postEndpoint: "/api/post-data"', "notion client should load post details from the restricted endpoint");
 expectIncludes(notionApiJs, "sharedContent.renderPostArticle", "notion client should reuse the shared article renderer instead of duplicating article markup");
 expectIncludes(notionApiJs, "POST_SUMMARY_CACHE_TTL", "notion client should keep a separate summary cache for bookmarks");
-expectIncludes(notionApiJs, "POSTS_REQUEST_KEY_PREFIX", "notion client should dedupe in-flight list requests without reviving stale response caches");
 expectIncludes(notionApiJs, "window.NotionContent", "notion client should reuse shared notion content helpers");
-expectIncludes(notionApiJs, "getRemoteBlogCategories", "notion client should source category metadata from the shared notion content module");
 assert.ok(
   !notionApiJs.includes("RESPONSE_CACHE_TTL"),
   "notion client should remove zero-effect response cache branches instead of carrying disabled cache code",
@@ -1015,15 +1184,10 @@ assert.equal(
 expectIncludes(serverNotionJs, "queryPublicPages", "server notion layer should expose a filtered public page query helper");
 expectIncludes(serverNotionJs, "queryPublicPosts", "server notion layer should provide a public post query helper");
 expectIncludes(serverNotionJs, "PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS", "server notion layer should define a short-lived public summary cache");
-expectIncludes(serverNotionJs, "getPublicPageSummaries", "server notion layer should cache public list summaries separately from post details");
 expectIncludes(serverNotionJs, "buildContentSchema", "server notion layer should derive content property mappings from database metadata");
 expectIncludes(serverNotionJs, "buildDatabaseSorts", "server notion layer should derive list sorting from the resolved schema");
-expectIncludes(serverNotionJs, "buildCategoryFilter", "server notion layer should prefilter category queries before paginating");
-expectIncludes(serverNotionJs, "applyPostFilters", "server notion layer should centralize local category/search semantics");
 expectIncludes(serverNotionJs, "normalizePostQueryFilters", "server notion layer should normalize category and search inputs before querying");
-expectIncludes(serverNotionJs, "loadPublicPagesForQuery", "server notion layer should separate source selection from local filtering");
 expectIncludes(serverNotionJs, "hasPostQueryFilters", "server notion layer should detect when filtered queries need extra work");
-expectIncludes(serverNotionJs, "queryPublicPages({ category, search })", "server notion layer should thread search/category filters into public list queries");
 expectIncludes(serverNotionJs, "NOTION_REQUEST_TIMEOUT_MS", "server notion layer should define a request timeout for upstream calls");
 expectIncludes(serverNotionJs, "AbortController", "server notion layer should abort slow Notion requests");
 expectIncludes(serverNotionJs, "runWithBlockChildConcurrency", "server notion layer should limit recursive block child fetch concurrency");
@@ -1191,6 +1355,164 @@ assert.equal(
   serverNotionHelpers.renderPostContent(builtPostPayload, { baseOrigin: "https://example.com" }),
   "<p>Server rendered body</p>",
   "server notion layer should render post HTML on demand from structured content",
+);
+const queryCacheFetchCounts = {
+  database: 0,
+  pageQueries: 0,
+};
+const queryCacheRequestBodies = [];
+const queryCacheServerNotion = loadCommonJsModule("server/notion-server.js", [], {
+  process: {
+    env: {
+      ...process.env,
+      NOTION_TOKEN: "test-token",
+      NOTION_DATABASE_ID: "query-cache-database",
+      SITE_URL: "https://example.com",
+      PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS: "120000",
+    },
+  },
+  fetch: async (url, init = {}) => {
+    const requestUrl = String(url);
+
+    if (requestUrl.endsWith("/databases/query-cache-database")) {
+      queryCacheFetchCounts.database += 1;
+      return createJsonResponse({
+        properties: {
+          Name: { id: "title", name: "Name", type: "title" },
+          Excerpt: { id: "excerpt", name: "Excerpt", type: "rich_text" },
+          Tags: { id: "tags", name: "Tags", type: "multi_select" },
+          Category: { id: "category", name: "Category", type: "select" },
+        },
+      });
+    }
+
+    if (requestUrl.endsWith("/databases/query-cache-database/query")) {
+      queryCacheFetchCounts.pageQueries += 1;
+      const requestBody = JSON.parse(init?.body || "{}");
+      queryCacheRequestBodies.push(requestBody);
+      const requestedCategory = requestBody?.filter?.select?.equals;
+
+      if (requestedCategory === "tech") {
+        return createJsonResponse({
+          results: [],
+          has_more: false,
+          next_cursor: null,
+        });
+      }
+
+      return createJsonResponse({
+        results: [
+          {
+            id: "search-post-alpha",
+            properties: {
+              Name: {
+                id: "title",
+                name: "Name",
+                type: "title",
+                title: [{ plain_text: "Alpha article" }],
+              },
+              Excerpt: {
+                id: "excerpt",
+                name: "Excerpt",
+                type: "rich_text",
+                rich_text: [{ plain_text: "Searchable excerpt" }],
+              },
+              Tags: {
+                id: "tags",
+                name: "Tags",
+                type: "multi_select",
+                multi_select: [{ name: "alpha" }],
+              },
+              Category: {
+                id: "category",
+                name: "Category",
+                type: "select",
+                select: { name: "Tech" },
+              },
+            },
+          },
+          {
+            id: "search-post-beta",
+            properties: {
+              Name: {
+                id: "title",
+                name: "Name",
+                type: "title",
+                title: [{ plain_text: "Beta article" }],
+              },
+              Excerpt: {
+                id: "excerpt",
+                name: "Excerpt",
+                type: "rich_text",
+                rich_text: [{ plain_text: "Other excerpt" }],
+              },
+              Tags: {
+                id: "tags",
+                name: "Tags",
+                type: "multi_select",
+                multi_select: [{ name: "beta" }],
+              },
+              Category: {
+                id: "category",
+                name: "Category",
+                type: "select",
+                select: { name: "Tech" },
+              },
+            },
+          },
+        ],
+        has_more: false,
+        next_cursor: null,
+      });
+    }
+
+    throw new Error(`Unexpected Notion request during filtered query cache test: ${requestUrl}`);
+  },
+});
+const firstCachedQuery = await queryCacheServerNotion.queryPublicPosts({
+  category: "Tech",
+  search: "alpha",
+  page: 1,
+});
+const secondCachedQuery = await queryCacheServerNotion.queryPublicPosts({
+  category: "Tech",
+  search: "alpha",
+  page: 1,
+});
+const differentlyCasedQuery = await queryCacheServerNotion.queryPublicPosts({
+  category: "tech",
+  search: "alpha",
+  page: 1,
+});
+assert.equal(
+  queryCacheFetchCounts.database,
+  1,
+  "server notion layer should reuse one database metadata lookup while caching filtered list queries",
+);
+assert.equal(
+  queryCacheFetchCounts.pageQueries,
+  2,
+  "server notion layer should reuse cached filtered query results for identical filters without collapsing differently cased category queries",
+);
+assert.equal(
+  queryCacheRequestBodies[0]?.filter?.property,
+  "Category",
+  "server notion layer should still push category filters down to the Notion database query when possible",
+);
+assert.equal(
+  firstCachedQuery.total,
+  1,
+  "server notion layer should still apply local search filtering after the category-prefiltered query returns",
+);
+assert.equal(
+  secondCachedQuery.results[0]?.id,
+  "search-post-alpha",
+  "server notion layer should return the cached filtered result set without changing the query output",
+);
+assert.equal(
+  differentlyCasedQuery.total,
+  0,
+  "server notion layer should not reuse a cached category query result when the requested category value changes semantically",
 );
 const dedupedFetchCounts = {
   database: 0,

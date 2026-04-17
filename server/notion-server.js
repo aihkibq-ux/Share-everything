@@ -1,9 +1,11 @@
 const {
   DEFAULT_NOTION_CONTENT_PROPERTY_CANDIDATES,
+  buildPostSearchText,
   escapeHtml,
   getCategoryColor,
   mapNotionBlock,
   mapNotionPage,
+  normalizeSearchText,
   renderPostArticle,
   renderBlocks,
   resolveNotionContentSchema,
@@ -18,6 +20,7 @@ const DEFAULT_SITE_ORIGIN = process.env.SITE_URL || "https://www.0000068.xyz";
 const DEFAULT_POST_PAGE_SIZE = 9;
 const DATABASE_METADATA_TTL_MS = Number(process.env.DATABASE_METADATA_TTL_MS || 300_000);
 const PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS = Number(process.env.PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS || 120_000);
+const PUBLIC_PAGE_QUERY_CACHE_MAX_ENTRIES = 24;
 const PUBLIC_POST_CACHE_TTL_MS = Number(process.env.PUBLIC_POST_CACHE_TTL_MS || 60_000);
 const PUBLIC_POST_CACHE_MAX_ENTRIES = 20;
 const NOTION_REQUEST_TIMEOUT_MS = Number(process.env.NOTION_REQUEST_TIMEOUT_MS || 12_000);
@@ -64,8 +67,10 @@ let databaseMetadataCache = null;
 let databaseMetadataPromise = null;
 let publicPageSummaryCache = null;
 let publicPageSummaryPromise = null;
+const publicPageQueryCache = new Map();
 const publicPostCache = new Map();
 const pendingPublicPostRequests = new Map();
+const POST_SEARCH_TEXT_SYMBOL = Symbol("postSearchText");
 
 function readCsvEnv(names, defaults = []) {
   const keys = Array.isArray(names) ? names : [names];
@@ -282,10 +287,54 @@ function getCachedPublicPageSummaries() {
 
   if (Date.now() >= publicPageSummaryCache.expiresAt) {
     publicPageSummaryCache = null;
+    publicPageQueryCache.clear();
     return null;
   }
 
   return publicPageSummaryCache;
+}
+
+function buildPublicPageQueryCacheKey(filters = {}) {
+  return JSON.stringify({
+    category: typeof filters.category === "string" ? filters.category.trim() : "",
+    search: normalizeSearchText(filters.search),
+  });
+}
+
+function getCachedPublicPageQuery(cacheKey) {
+  const entry = publicPageQueryCache.get(cacheKey);
+  if (!entry) return null;
+
+  if (Date.now() >= entry.expiresAt) {
+    publicPageQueryCache.delete(cacheKey);
+    return null;
+  }
+
+  publicPageQueryCache.delete(cacheKey);
+  publicPageQueryCache.set(cacheKey, entry);
+  return Array.isArray(entry.pages) ? entry.pages.slice() : null;
+}
+
+function cachePublicPageQuery(cacheKey, pages, expiresAt) {
+  const safeExpiresAt = Number(expiresAt);
+  if (!Array.isArray(pages) || !Number.isFinite(safeExpiresAt) || safeExpiresAt <= Date.now()) {
+    return;
+  }
+
+  if (publicPageQueryCache.has(cacheKey)) {
+    publicPageQueryCache.delete(cacheKey);
+  }
+
+  publicPageQueryCache.set(cacheKey, {
+    pages: pages.slice(),
+    expiresAt: safeExpiresAt,
+  });
+
+  while (publicPageQueryCache.size > PUBLIC_PAGE_QUERY_CACHE_MAX_ENTRIES) {
+    const oldestKey = publicPageQueryCache.keys().next().value;
+    if (!oldestKey) break;
+    publicPageQueryCache.delete(oldestKey);
+  }
 }
 
 function findPropertyEntriesByCandidates(properties, candidates) {
@@ -671,12 +720,34 @@ function filterPostsByCategory(posts, category) {
 }
 
 function filterPostsBySearch(posts, search) {
-  const normalizedSearch = typeof search === "string" ? search.trim().toLowerCase() : "";
+  const normalizedSearch = normalizeSearchText(search);
   if (!normalizedSearch) {
     return posts.slice();
   }
 
-  return posts.filter((post) => buildPostSearchText(post).includes(normalizedSearch));
+  return posts.filter((post) => {
+    if (typeof post?._searchText === "string" && post._searchText) {
+      return post._searchText.includes(normalizedSearch);
+    }
+
+    if (typeof post !== "object" || post == null) {
+      return buildPostSearchText(post).includes(normalizedSearch);
+    }
+
+    if (typeof post[POST_SEARCH_TEXT_SYMBOL] !== "string") {
+      const searchText = buildPostSearchText(post);
+      try {
+        Object.defineProperty(post, POST_SEARCH_TEXT_SYMBOL, {
+          value: searchText,
+          configurable: true,
+        });
+      } catch (error) {
+        return searchText.includes(normalizedSearch);
+      }
+    }
+
+    return post[POST_SEARCH_TEXT_SYMBOL].includes(normalizedSearch);
+  });
 }
 
 function applyPostFilters(posts, { category = "", search = "" } = {}) {
@@ -715,12 +786,14 @@ async function getPublicPageSummaries() {
       });
 
       if (cacheTtlMs > 0) {
+        publicPageQueryCache.clear();
         publicPageSummaryCache = {
           pages,
           expiresAt: Date.now() + cacheTtlMs,
         };
       } else {
         publicPageSummaryCache = null;
+        publicPageQueryCache.clear();
       }
 
       return pages;
@@ -733,34 +806,61 @@ async function getPublicPageSummaries() {
 }
 
 async function loadPublicPagesForQuery(filters) {
-  const cachedSummaries = getCachedPublicPageSummaries()?.pages;
-  if (cachedSummaries) {
+  const cachedSummaries = getCachedPublicPageSummaries();
+  if (cachedSummaries?.pages) {
     return cachedSummaries;
   }
 
   if (!hasPostQueryFilters(filters)) {
-    return getPublicPageSummaries();
+    const pages = await getPublicPageSummaries();
+    return {
+      pages,
+      expiresAt: getCachedPublicPageSummaries()?.expiresAt || 0,
+    };
   }
 
   const metadata = await getDatabaseMetadata();
   const categoryFilter = buildCategoryFilter(filters.category, metadata.contentSchema);
   if (!categoryFilter) {
-    return getPublicPageSummaries();
+    const pages = await getPublicPageSummaries();
+    return {
+      pages,
+      expiresAt: getCachedPublicPageSummaries()?.expiresAt || 0,
+    };
   }
 
-  return queryDatabasePages({
+  const pages = await queryDatabasePages({
     filter: combineDatabaseFilters([
       metadata.publicAccessPolicy.filter,
       categoryFilter,
     ]),
     schema: metadata.contentSchema,
   });
+
+  const cacheTtlMs = normalizeNonNegativeNumber(PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS, 15_000);
+  return {
+    pages,
+    expiresAt: cacheTtlMs > 0 ? Date.now() + cacheTtlMs : 0,
+  };
 }
 
 async function queryPublicPages(query = {}) {
   const filters = normalizePostQueryFilters(query);
-  const pages = await loadPublicPagesForQuery(filters);
-  return applyPostFilters(pages, filters);
+  if (!hasPostQueryFilters(filters)) {
+    const { pages } = await loadPublicPagesForQuery(filters);
+    return pages;
+  }
+
+  const cacheKey = buildPublicPageQueryCacheKey(filters);
+  const cachedPages = getCachedPublicPageQuery(cacheKey);
+  if (cachedPages) {
+    return cachedPages;
+  }
+
+  const { pages, expiresAt } = await loadPublicPagesForQuery(filters);
+  const filteredPages = applyPostFilters(pages, filters);
+  cachePublicPageQuery(cacheKey, filteredPages, expiresAt);
+  return filteredPages;
 }
 
 function isPageInPublicDatabase(page) {
@@ -799,14 +899,6 @@ function assertPublicPage(page, publicAccessPolicy) {
     status: 404,
     code: "notion_page_not_public",
   });
-}
-
-function buildPostSearchText(post) {
-  return [
-    post?.title || "",
-    post?.excerpt || "",
-    ...(Array.isArray(post?.tags) ? post.tags : []),
-  ].join(" ").toLowerCase();
 }
 
 function normalizePositiveInteger(value, fallback) {

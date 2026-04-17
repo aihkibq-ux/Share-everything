@@ -167,6 +167,29 @@
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
 
+  function normalizeSearchText(value) {
+    return String(value ?? "")
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, " ");
+  }
+
+  function normalizePostTags(tags) {
+    if (!Array.isArray(tags)) return [];
+
+    return tags
+      .map((tag) => String(tag ?? "").trim())
+      .filter(Boolean);
+  }
+
+  function buildPostSearchText(post = {}) {
+    return normalizeSearchText([
+      typeof post?.title === "string" ? post.title : "",
+      typeof post?.excerpt === "string" ? post.excerpt : "",
+      ...normalizePostTags(post?.tags),
+    ].join(" "));
+  }
+
   function normalizeCandidates(value, fallback = []) {
     if (Array.isArray(value)) {
       return value.map((candidate) => String(candidate).trim()).filter(Boolean);
@@ -391,7 +414,7 @@
     };
 
     if (includeSearchText) {
-      mappedPage._searchText = [title, excerpt, ...tags].join(" ").toLowerCase();
+      mappedPage._searchText = buildPostSearchText({ title, excerpt, tags });
     }
 
     return mappedPage;
@@ -945,6 +968,7 @@
     DEFAULT_NOTION_CONTENT_PROPERTY_CANDIDATES,
     REMOTE_BLOG_CATEGORIES,
     SUPPORTED_BLOG_CATEGORIES,
+    buildPostSearchText,
     escapeHtml,
     getBookmarkOnlyCategories,
     getRemoteBlogCategories,
@@ -961,6 +985,7 @@
     resolveShareImageUrl,
     richTextToHtml,
     richTextToPlain,
+    normalizeSearchText,
     sanitizeCssColorValue,
     sanitizeUrl,
   });

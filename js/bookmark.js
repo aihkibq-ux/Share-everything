@@ -5,6 +5,7 @@
 const BookmarkManager = (() => {
   const BOOKMARK_KEY = "bookmarked_posts";
   const BOOKMARK_METADATA_VERSION = 4;
+  const sharedContent = window.NotionContent || {};
   const siteUtils = window.SiteUtils || {};
   const resolveDisplayImageUrl = siteUtils.resolveDisplayImageUrl;
   const sanitizeImageUrl = siteUtils.sanitizeImageUrl;
@@ -33,11 +34,19 @@ const BookmarkManager = (() => {
   }
 
   function buildBookmarkSearchText({ title = "", excerpt = "", tags = [] } = {}) {
+    if (typeof sharedContent.buildPostSearchText === "function") {
+      return sharedContent.buildPostSearchText({
+        title: normalizeText(title),
+        excerpt: normalizeText(excerpt),
+        tags: normalizeTags(tags),
+      });
+    }
+
     return [
       normalizeText(title),
       normalizeText(excerpt),
       ...normalizeTags(tags),
-    ].join(" ").toLowerCase();
+    ].join(" ").toLowerCase().trim().replace(/\s+/g, " ");
   }
 
   function normalizePersistentCoverImage(value) {

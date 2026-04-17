@@ -33,26 +33,20 @@
   const sanitizeCssColor = typeof SHARED_CONTENT.sanitizeCssColorValue === "function"
     ? SHARED_CONTENT.sanitizeCssColorValue
     : (value) => value;
+  const buildSharedPostSearchText = typeof SHARED_CONTENT.buildPostSearchText === "function"
+    ? SHARED_CONTENT.buildPostSearchText
+    : (post) => [
+      post?.title || "",
+      post?.excerpt || "",
+      ...(Array.isArray(post?.tags) ? post.tags : []),
+    ].join(" ").toLowerCase().trim().replace(/\s+/g, " ");
   const HISTORY_MODE_REPLACE = "replace";
   const HISTORY_MODE_PUSH = "push";
-
-  function escapeHtmlFallback(value) {
-    return String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
 
   function buildBookmarkSearchText(post) {
     return typeof post?._searchText === "string" && post._searchText
       ? post._searchText
-      : [
-        post?.title || "",
-        post?.excerpt || "",
-        ...(Array.isArray(post?.tags) ? post.tags : []),
-      ].join(" ").toLowerCase();
+      : buildSharedPostSearchText(post);
   }
 
   function buildBookmarkPageData({ bookmarkManager, search, page, pageSize, onBeforeRead } = {}) {
@@ -99,8 +93,7 @@
     const statusEl = document.getElementById("blogStatus");
     const escapeText =
       notionApi?.escapeHtml ||
-      sharedContent.escapeHtml ||
-      escapeHtmlFallback;
+      sharedContent.escapeHtml;
     const getCategoryColor =
       notionApi?.getCategoryColor ||
       sharedContent.getCategoryColor ||
