@@ -1,11 +1,11 @@
 (() => {
   function initIndexPage() {
     const sharedContent = window.NotionContent || {};
+    const siteUtils = window.SiteUtils || {};
     const featuredCategory =
       typeof sharedContent.getRemoteBlogCategories === "function"
         ? sharedContent.getRemoteBlogCategories().find((category) => category.name !== (sharedContent.ALL_CATEGORY || "全部"))?.name || "精选"
         : "精选";
-    const bookmarkCategory = sharedContent.BOOKMARK_CATEGORY || "收藏";
     const searchForm = document.getElementById("heroSearchForm");
     const searchInput = document.getElementById("heroSearch");
     const ctaHome = document.getElementById("ctaHome");
@@ -46,7 +46,10 @@
 
     ctaHome.href = "/blog.html";
     ctaStart.href = `/blog.html?category=${encodeURIComponent(featuredCategory)}`;
-    ctaWiki.href = `/blog.html?category=${encodeURIComponent(bookmarkCategory)}`;
+    ctaWiki.href =
+      typeof siteUtils.buildBookmarkListingUrl === "function"
+        ? siteUtils.buildBookmarkListingUrl()
+        : "/blog.html#bookmarks";
 
     searchForm.addEventListener("submit", handleSearchSubmit);
     ctaHome.addEventListener("click", handleLinkClick);

@@ -138,6 +138,15 @@
 
 ---
 
+## 第六轮修复（2026-04-17）
+
+- 收藏入口不再静态暴露 `?category=收藏` 查询链接，统一切到 `/blog.html#bookmarks` hash-only 路由，降低爬虫发现和错误分享本地视图的风险。
+- `blog-page.js` 的本地收藏搜索改为复用共享搜索归一化规则，修复多空格查询在收藏视图下漏匹配的问题。
+- `post-page.js` 在 `NotionAPI` 不可用但 SSR 内容和 `#initialPostData` 存在时，继续启用本地收藏按钮，不再把收藏能力和详情 JSON 接口绑死。
+- `smoke-check` 新增行为断言，直接验证旧收藏查询路由归一化、bookmark hash fallback，以及详情页 SSR 收藏降级链路。
+
+---
+
 ## 🟢 低优先级
 
 ### 9. ✅ 已修复｜API 路由拒绝 HEAD 请求

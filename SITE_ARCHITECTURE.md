@@ -157,7 +157,7 @@ blog-page.js → NotionAPI.queryPosts()
 → 浏览器渲染卡片列表
 ```
 
-**本地收藏流程**：分类切换到"收藏"时，直接读 `localStorage`，不请求服务端。
+**本地收藏流程**：切换到收藏视图时，直接读 `localStorage`，不请求服务端。收藏视图的 URL 状态使用 `#bookmarks` hash 维护（如 `/blog.html#bookmarks?search=...`），避免把本地视图暴露成可抓取的公开查询页。
 
 功能：分类过滤、搜索、分页、书签按钮、URL 状态同步。
 脚本链路：`font-loader.js` + `notion-content.js` + `runtime-core.js` + `common.js` + `notion-api.js` + `bookmark.js` + `blog-page.js`
@@ -191,7 +191,7 @@ blog-page.js → NotionAPI.queryPosts()
 | 文件 | 职责 |
 |------|------|
 | `runtime-core.js` | `StructuredData`、`PageProgress`、`focusSpaContent`、`PageRuntime` |
-| `common.js` | 粒子星空、光标跟随、`SiteUtils`、`updateSeoMeta`、`SPARouter` |
+| `common.js` | 粒子星空、光标跟随、`SiteUtils`（含 bookmark hash URL helper）、`updateSeoMeta`、`SPARouter` |
 
 > 站点是“真实 HTML 入口 + 轻量 SPA 导航”的混合模式，不是纯 SPA。
 
@@ -221,8 +221,8 @@ blog-page.js → NotionAPI.queryPosts()
 
 | 文件 | 职责 |
 |------|------|
-| `blog-page.js` | 分类切换、搜索、分页、卡片渲染、书签交互、URL 同步 |
-| `post-page.js` | 首屏 hydration、书签按钮、返回列表、SEO 同步、SSR 容错 |
+| `blog-page.js` | 分类切换、搜索、分页、卡片渲染、书签交互、URL 同步；收藏视图走 hash-only 路由 |
+| `post-page.js` | 首屏 hydration、书签按钮、返回列表、SEO 同步、SSR 容错；`NotionAPI` 失效时仍可用 SSR 注入的摘要数据维持收藏按钮 |
 | `bookmark.js` | 完全本地收藏系统（localStorage），含旧数据补全 |
 | `font-loader.js` | 延迟激活带 `data-deferred-fonts` 的字体样式，降低首屏阻塞 |
 
@@ -280,6 +280,8 @@ blog-page.js → NotionAPI.queryPosts()
 | 结构化数据 | `Article` schema via `application/ld+json` | 文章详情页 |
 | robots.txt | 允许页面抓取，禁止 `/api/` | 全站 |
 | sitemap | `/sitemap.xml` → 动态生成 | 首页 + 列表页 + 所有公开文章 |
+
+补充：本地收藏视图不再通过 `?category=收藏` 这类公开查询参数暴露入口；静态入口统一链接到 `/blog.html#bookmarks`，运行时再对收藏视图写入 `noindex, nofollow` 并把 canonical 收敛到公开列表页 `/blog.html`。
 
 ## 8. 环境变量
 
@@ -376,6 +378,15 @@ blog-page.js → NotionAPI.queryPosts()
 | 3 | `escapeHtml` 只保留 `notion-content.js` 一份共享实现，其他前端脚本直接复用 | `js/notion-content.js`、`js/notion-api.js`、`js/blog-page.js` |
 | 4 | 页面入口脚本链路与回归测试同步更新，覆盖新运行时模块与分类缓存语义 | `index.html`、`blog.html`、`post.html`、`scripts/smoke-check.mjs` |
 
+### 第六轮修复（2026-04-17）
+
+| # | 修复内容 | 影响文件 |
+|---|---------|---------|
+| 1 | 收藏视图从公开查询参数改为 hash-only 路由；静态入口不再暴露 `?category=收藏` 链接，降低抓取与分享污染风险 | `index.html`、`blog.html`、`post.html`、`js/common.js`、`js/index-page.js`、`js/blog-page.js` |
+| 2 | `blog-page.js` 收藏搜索改为复用共享搜索归一化规则，修复多空格查询在本地收藏视图下漏匹配的问题 | `js/blog-page.js` |
+| 3 | `post-page.js` 在 `NotionAPI` 不可用但 SSR 内容存在时，复用 `#initialPostData` 继续驱动收藏按钮，不再把收藏能力和详情 JSON 接口绑死 | `js/post-page.js` |
+| 4 | `smoke-check` 新增行为断言，覆盖旧收藏查询路由归一化、bookmark hash fallback 与详情页 SSR 收藏降级链路 | `scripts/smoke-check.mjs` |
+
 ### 待后续迭代
 
 - 继续将 `common.js` 中的 particles / seo / router / site-utils 再细拆
@@ -394,6 +405,9 @@ blog-page.js → NotionAPI.queryPosts()
 - 列表过滤查询缓存命中
 - 分类过滤缓存语义正确性
 - `sessionStorage` 摘要压缩与跨实例恢复
+- 旧收藏查询路由到 `#bookmarks` 的归一化
+- 收藏 hash 路由在无远端数据源时的本地兜底
+- 详情页在 `NotionAPI` 不可用时复用 SSR 摘要维持收藏按钮
 
 ```bash
 npm run check

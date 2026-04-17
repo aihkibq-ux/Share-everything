@@ -207,13 +207,16 @@
       return Boolean(contentEl.innerHTML.trim());
     }
 
-    function showServerRenderedFallback() {
+    function showServerRenderedFallback({ hasBookmarkControls = false } = {}) {
       skeletonEl.style.display = "none";
       contentEl.style.display = "block";
       articleEl.querySelector(".post-back")?.style.removeProperty("display");
-      setBookmarkControlsVisible(false);
       emptyEl.style.display = "none";
-      announceStatus("文章内容已加载，部分互动功能暂时不可用。");
+      announceStatus(
+        hasBookmarkControls
+          ? "文章内容已加载，已切换到首屏内容。"
+          : "文章内容已加载，部分互动功能暂时不可用。",
+      );
     }
 
     function showEmpty(kind = "not-found") {
@@ -286,9 +289,20 @@
       console.error("NotionAPI is unavailable on post page.");
       initBackButton();
       setBookmarkControlsVisible(false);
+      const initialPostData = readInitialPostData();
+      const normalizedInitialPostId =
+        typeof siteUtils.normalizePostId === "function"
+          ? siteUtils.normalizePostId(initialPostData?.id)
+          : initialPostData?.id || null;
+      const canBookmarkFromInitialData = normalizedInitialPostId === postId;
 
       if (hasServerRenderedContent()) {
-        showServerRenderedFallback();
+        showServerRenderedFallback({
+          hasBookmarkControls: canBookmarkFromInitialData,
+        });
+        if (canBookmarkFromInitialData) {
+          initBookmark(initialPostData);
+        }
       } else {
         showEmpty("unavailable");
       }

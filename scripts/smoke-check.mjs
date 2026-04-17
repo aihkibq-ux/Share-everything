@@ -494,8 +494,14 @@ expectIncludes(postHtml, 'src="/js/post-page.js"', "post.html should use root-re
 expectIncludes(postHtml, 'id="postStatus"', "post.html should expose a live status region for post interactions");
 expectIncludes(blogHtml, 'href="/"', "blog.html should point the home action to the canonical root route");
 expectIncludes(postHtml, 'href="/"', "post.html should point the home action to the canonical root route");
+expectIncludes(indexHtml, 'href="/blog.html#bookmarks"', "index.html should keep bookmark navigation on a hash-only route");
+expectIncludes(blogHtml, 'href="/blog.html#bookmarks"', "blog.html should keep bookmark navigation on a hash-only route");
+expectIncludes(postHtml, 'href="/blog.html#bookmarks"', "post.html should keep bookmark navigation on a hash-only route");
 expectNotIncludes(blogHtml, 'href="/index.html"', "blog.html should avoid the duplicate /index.html home route");
 expectNotIncludes(postHtml, 'href="/index.html"', "post.html should avoid the duplicate /index.html home route");
+expectNotIncludes(indexHtml, '?category=%E6%94%B6%E8%97%8F', "index.html should avoid exposing bookmark query routes to crawlers");
+expectNotIncludes(blogHtml, '?category=%E6%94%B6%E8%97%8F', "blog.html should avoid exposing bookmark query routes to crawlers");
+expectNotIncludes(postHtml, '?category=%E6%94%B6%E8%97%8F', "post.html should avoid exposing bookmark query routes to crawlers");
 expectIncludes(indexHtml, 'src="/js/notion-content.js"', "index.html should load the shared notion content helpers");
 expectIncludes(blogHtml, 'src="/js/notion-content.js"', "blog.html should load the shared notion content helpers");
 expectIncludes(postHtml, 'src="/js/notion-content.js"', "post.html should load the shared notion content helpers");
@@ -521,6 +527,8 @@ expectIncludes(commonJs, "resolveShareImageUrl", "common.js should normalize sta
 expectIncludes(commonJs, "getPostIdFromUrl", "common.js should expose canonical post URL helpers");
 expectIncludes(commonJs, "getPreferredBlogReturnUrl", "common.js should expose a preferred blog return helper");
 expectIncludes(commonJs, "rememberBlogReturnUrl", "common.js should persist the last blog listing route");
+expectIncludes(commonJs, "buildBookmarkListingUrl", "common.js should expose a bookmark-listing URL helper");
+expectIncludes(commonJs, "parseBookmarkListingHash", "common.js should expose bookmark hash parsing for local-only views");
 expectIncludes(commonJs, "const PageProgress = window.PageProgress", "common.js should consume the shared page progress runtime helper");
 expectIncludes(commonJs, "const PageRuntime = window.PageRuntime", "common.js should consume the shared page runtime helper");
 expectIncludes(commonJs, "window.focusSpaContent", "common.js should consume the shared focus runtime helper");
@@ -528,6 +536,7 @@ expectIncludes(commonJs, 'existingLink.hasAttribute("data-deferred-fonts")', "co
 expectIncludes(commonJs, "function isRouteHtmlCacheable(url)", "common.js should distinguish cacheable route HTML from live post routes");
 expectIncludes(commonJs, "const canCacheHtml = isRouteHtmlCacheable(routeKey);", "common.js should avoid caching post route HTML");
 expectIncludes(commonJs, 'if (!isRouteHtmlCacheable(routeKey)) return;', "common.js should skip prefetching post route HTML");
+expectIncludes(commonJs, "if (u.hash !== c.hash) return;", "common.js should leave same-document hash navigation to the browser");
 expectIncludes(commonJs, 'resolved.pathname === "/index.html"', "common.js should normalize the duplicate /index.html home route");
 expectIncludes(commonJs, 'history.replaceState(null, "", resolveUrl(window.location.href).href);', "common.js should replace duplicate home URLs with the canonical root route");
 expectIncludes(runtimeCoreJs, 'application/ld+json', "runtime-core.js should own structured data script management");
@@ -553,8 +562,12 @@ expectIncludes(blogPageJs, 'if (!hasRemoteSource && currentCategory !== BOOKMARK
 expectIncludes(blogPageJs, "BOOKMARK_ONLY_CATEGORIES", "blog page should expose a bookmark-only fallback filter set");
 expectIncludes(blogPageJs, "buildBookmarkPageData", "blog page should centralize local bookmark pagination and filtering");
 expectIncludes(blogPageJs, "buildBookmarkSearchText", "blog page should reuse one bookmark search-text builder");
+expectIncludes(blogPageJs, "normalizeBookmarkSearchQuery", "blog page should normalize bookmark search queries with the shared search helper");
 expectIncludes(blogPageJs, "loadCurrentPageData", "blog page should centralize the active data source selection");
 expectIncludes(blogPageJs, "didNormalizeRoute", "blog page should normalize invalid incoming route state before rendering");
+expectIncludes(blogPageJs, "parseBookmarkListingHash", "blog page should read bookmark-only route state from the URL hash");
+expectIncludes(blogPageJs, "buildBookmarkListingUrl", "blog page should serialize bookmark-only route state back into hash URLs");
+expectIncludes(blogPageJs, "bindBookmarkHashNavigation", "blog page should react to same-document bookmark hash navigation");
 expectIncludes(blogPageJs, 'const HISTORY_MODE_REPLACE = "replace";', "blog page should name the replaceState history mode");
 expectIncludes(blogPageJs, 'const HISTORY_MODE_PUSH = "push";', "blog page should name the pushState history mode");
 expectIncludes(blogPageJs, "function syncListingUrl(historyMode = HISTORY_MODE_REPLACE)", "blog page should centralize URL sync with explicit history modes");
@@ -895,6 +908,223 @@ assert.equal(
   "blog page should replace the current history entry while live search text changes",
 );
 blogPageCleanup?.();
+const legacyBookmarkRegisteredPages = new Map();
+const legacyBookmarkFiltersEl = new FakeElement();
+const legacyBookmarkSearchEl = new FakeElement();
+const legacyBookmarkGridEl = new FakeElement();
+const legacyBookmarkEmptyEl = new FakeElement();
+const legacyBookmarkPaginationEl = new FakeElement();
+const legacyBookmarkStatusEl = new FakeElement();
+const legacyBookmarkTitleEl = new FakeElement();
+const legacyBookmarkOverviewAction = {
+  classList: createClassList(),
+  querySelector: (selector) => (selector === "span" ? { textContent: "总览" } : null),
+};
+const legacyBookmarkAction = {
+  classList: createClassList(),
+  querySelector: (selector) => (selector === "span" ? { textContent: "收藏" } : null),
+};
+const legacyBookmarkLocation = new URL("https://example.com/blog.html?category=%E6%94%B6%E8%97%8F&search=Alpha&page=2");
+const legacyBookmarkHistory = {
+  pushCalls: [],
+  replaceCalls: [],
+  pushState(state, title, nextUrl) {
+    this.pushCalls.push(String(nextUrl));
+    legacyBookmarkLocation.href = new URL(String(nextUrl), legacyBookmarkLocation.href).href;
+  },
+  replaceState(state, title, nextUrl) {
+    this.replaceCalls.push(String(nextUrl));
+    legacyBookmarkLocation.href = new URL(String(nextUrl), legacyBookmarkLocation.href).href;
+  },
+};
+loadBrowserScript("js/blog-page.js", {
+  window: {
+    location: legacyBookmarkLocation,
+    history: legacyBookmarkHistory,
+    scrollTo: () => {},
+    NotionAPI: {
+      escapeHtml: (value) => String(value ?? ""),
+      getCategoryColor: () => ({ bg: "#000", color: "#fff", border: "#222" }),
+      getCategories: () => [
+        { name: "全部", emoji: "📋" },
+        { name: "技术", emoji: "💻" },
+      ],
+      getPageSize: () => 9,
+      queryPosts: async () => ({
+        results: [],
+        total: 0,
+        totalPages: 1,
+        currentPage: 1,
+      }),
+    },
+    PageRuntime: {
+      register(pageId, pageModule) {
+        legacyBookmarkRegisteredPages.set(pageId, pageModule);
+      },
+    },
+    SiteUtils: {
+      rememberBlogReturnUrl: () => {},
+      sanitizeCoverBackground: (value, fallback) => value || fallback,
+      resolveShareImageUrl: (value) => value,
+      resolveDisplayImageUrl: (value) => value,
+      sanitizeImageUrl: (value) => value,
+      buildPostPath: (postId) => `/posts/${postId}`,
+    },
+    updateSeoMeta: () => {},
+    initBlogCardReveal: () => null,
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame: () => {},
+  },
+  document: {
+    getElementById(id) {
+      return {
+        blogFilters: legacyBookmarkFiltersEl,
+        blogSearch: legacyBookmarkSearchEl,
+        blogGrid: legacyBookmarkGridEl,
+        emptyState: legacyBookmarkEmptyEl,
+        pagination: legacyBookmarkPaginationEl,
+        blogStatus: legacyBookmarkStatusEl,
+      }[id] || null;
+    },
+    querySelector(selector) {
+      return selector === ".page-title" ? legacyBookmarkTitleEl : null;
+    },
+    querySelectorAll(selector) {
+      return selector === ".top-actions .action-btn"
+        ? [legacyBookmarkOverviewAction, legacyBookmarkAction]
+        : [];
+    },
+    createElement() {
+      return new FakeElement();
+    },
+  },
+});
+const legacyBookmarkCleanup = legacyBookmarkRegisteredPages.get("blog")?.init?.();
+await Promise.resolve();
+assert.equal(
+  legacyBookmarkHistory.replaceCalls.at(0),
+  "/blog.html#bookmarks?search=Alpha&page=2",
+  "blog page should normalize legacy bookmark query routes onto the hash-only bookmark view URL",
+);
+legacyBookmarkCleanup?.();
+const bookmarkHashRegisteredPages = new Map();
+const bookmarkHashFiltersEl = new FakeElement();
+const bookmarkHashSearchEl = new FakeElement();
+const bookmarkHashGridEl = new FakeElement();
+const bookmarkHashEmptyEl = new FakeElement();
+const bookmarkHashPaginationEl = new FakeElement();
+const bookmarkHashStatusEl = new FakeElement();
+const bookmarkHashTitleEl = new FakeElement();
+const bookmarkHashHandlers = new Set();
+const bookmarkHashOverviewAction = {
+  classList: createClassList(),
+  querySelector: (selector) => (selector === "span" ? { textContent: "总览" } : null),
+};
+const bookmarkHashAction = {
+  classList: createClassList(),
+  querySelector: (selector) => (selector === "span" ? { textContent: "收藏" } : null),
+};
+const bookmarkHashLocation = new URL("https://example.com/blog.html#bookmarks?search=TypeScript%20%20Testing");
+const bookmarkHashHistory = {
+  pushCalls: [],
+  replaceCalls: [],
+  pushState(state, title, nextUrl) {
+    this.pushCalls.push(String(nextUrl));
+    bookmarkHashLocation.href = new URL(String(nextUrl), bookmarkHashLocation.href).href;
+  },
+  replaceState(state, title, nextUrl) {
+    this.replaceCalls.push(String(nextUrl));
+    bookmarkHashLocation.href = new URL(String(nextUrl), bookmarkHashLocation.href).href;
+  },
+};
+loadBrowserScript("js/blog-page.js", {
+  window: {
+    location: bookmarkHashLocation,
+    history: bookmarkHashHistory,
+    scrollTo: () => {},
+    BookmarkManager: {
+      getAll: () => [{
+        id: "bookmark-hit",
+        title: "Bookmark hit",
+        excerpt: "Local only",
+        category: "",
+        date: "",
+        readTime: "",
+        coverImage: null,
+        coverEmoji: "📝",
+        coverGradient: "linear-gradient(135deg, #111111, #222222)",
+        tags: ["TypeScript", "Testing"],
+      }],
+      isBookmarked: () => true,
+      toggleById: () => true,
+      hasLegacyMetadata: () => false,
+    },
+    PageRuntime: {
+      register(pageId, pageModule) {
+        bookmarkHashRegisteredPages.set(pageId, pageModule);
+      },
+    },
+    SiteUtils: {
+      rememberBlogReturnUrl: () => {},
+      sanitizeCoverBackground: (value, fallback) => value || fallback,
+      resolveShareImageUrl: (value) => value,
+      resolveDisplayImageUrl: (value) => value,
+      sanitizeImageUrl: (value) => value,
+      buildPostPath: (postId) => `/posts/${postId}`,
+    },
+    updateSeoMeta: () => {},
+    initBlogCardReveal: () => null,
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame: () => {},
+    addEventListener(type, handler) {
+      if (type === "hashchange") {
+        bookmarkHashHandlers.add(handler);
+      }
+    },
+    removeEventListener(type, handler) {
+      if (type === "hashchange") {
+        bookmarkHashHandlers.delete(handler);
+      }
+    },
+  },
+  document: {
+    getElementById(id) {
+      return {
+        blogFilters: bookmarkHashFiltersEl,
+        blogSearch: bookmarkHashSearchEl,
+        blogGrid: bookmarkHashGridEl,
+        emptyState: bookmarkHashEmptyEl,
+        pagination: bookmarkHashPaginationEl,
+        blogStatus: bookmarkHashStatusEl,
+      }[id] || null;
+    },
+    querySelector(selector) {
+      return selector === ".page-title" ? bookmarkHashTitleEl : null;
+    },
+    querySelectorAll(selector) {
+      return selector === ".top-actions .action-btn"
+        ? [bookmarkHashOverviewAction, bookmarkHashAction]
+        : [];
+    },
+    createElement() {
+      return new FakeElement();
+    },
+  },
+});
+const bookmarkHashCleanup = bookmarkHashRegisteredPages.get("blog")?.init?.();
+await Promise.resolve();
+assert.ok(
+  bookmarkHashGridEl.innerHTML.includes("Bookmark hit"),
+  "blog page should keep bookmark search matches when the query contains extra whitespace",
+);
+bookmarkHashLocation.hash = "";
+bookmarkHashHandlers.forEach((handler) => handler());
+assert.equal(
+  bookmarkHashHistory.replaceCalls.at(-1),
+  "/blog.html#bookmarks?search=TypeScript++Testing",
+  "blog page should keep the local bookmark view pinned to the bookmark hash route when the remote source is unavailable",
+);
+bookmarkHashCleanup?.();
 const staleSessionSummaryKey = "notion_post_summary_stale";
 const quotaSessionStorage = createQuotaLimitedStorageMock({
   initialEntries: {
@@ -1033,6 +1263,7 @@ expectIncludes(indexPageJs, "function navigateTo(url)", "index page should provi
 expectIncludes(indexPageJs, "window.location.href = url", "index page should fall back to full navigation");
 expectIncludes(indexPageJs, 'searchForm.addEventListener("submit", handleSearchSubmit);', "index page should intercept the real search form for SPA navigation");
 expectIncludes(indexPageJs, 'ctaHome.href = "/blog.html";', "index page should preserve a native home/blog link fallback");
+expectIncludes(indexPageJs, "siteUtils.buildBookmarkListingUrl", "index page should reuse the shared bookmark-listing URL helper");
 expectIncludes(indexPageJs, 'navigateTo(`/blog.html?search=${encodeURIComponent(query)}`);', "index page search navigation should use root-relative paths");
 expectIncludes(postPageJs, 'window.StructuredData?.set?.("post-article"', "post page should publish article structured data");
 expectIncludes(postPageJs, "initialPostData", "post page should reuse server-rendered post payloads");
@@ -1044,6 +1275,8 @@ expectIncludes(postPageJs, "showEmpty(isMissingPostError(error) ? \"not-found\" 
 expectIncludes(postPageJs, "announceStatus(`收藏失败，请稍后重试", "post page should announce bookmark persistence failures");
 expectIncludes(postPageJs, "hasServerRenderedContent", "post page should detect pre-rendered article content");
 expectIncludes(postPageJs, "showServerRenderedFallback", "post page should preserve server-rendered content when NotionAPI is unavailable");
+expectIncludes(postPageJs, "canBookmarkFromInitialData", "post page should recover bookmark controls from SSR initial data when the client API is unavailable");
+expectIncludes(postPageJs, "initBookmark(initialPostData);", "post page should still wire bookmark controls from SSR summary data in fallback mode");
 assert.ok(
   postPageJs.indexOf("const postId = getCurrentPostId();") < postPageJs.indexOf('if (!notionApi)'),
   "post page should initialize route state before the NotionAPI fallback branch runs",
@@ -1054,6 +1287,98 @@ assert.ok(
   !postPageJs.includes("reading_history"),
   "post page should not keep unused reading_history persistence code",
 );
+const registeredPostPages = new Map();
+let fallbackBookmarkToggleCount = 0;
+class FakeScriptElement extends FakeElement {}
+const postSkeletonEl = new FakeElement();
+const postContentEl = new FakeElement();
+postContentEl.innerHTML = "<div>SSR article body</div>";
+const postEmptyEl = new FakeElement();
+const postBackEl = new FakeElement();
+postBackEl.style = {
+  removeProperty() {},
+  setProperty() {},
+};
+const postArticleEl = new FakeElement();
+postArticleEl.querySelector = (selector) => (selector === ".post-back" ? postBackEl : null);
+const fabBookmarkEl = new FakeElement();
+const fabBookmarkLabelEl = new FakeElement();
+fabBookmarkEl.querySelector = (selector) => (selector === ".fab-bookmark-label" ? fabBookmarkLabelEl : null);
+const navBookmarkEl = new FakeElement();
+navBookmarkEl.querySelector = () => null;
+const postStatusEl = new FakeElement();
+const initialPostDataScriptEl = new FakeScriptElement();
+initialPostDataScriptEl.textContent = JSON.stringify({
+  id: "post-1",
+  title: "SSR fallback title",
+  excerpt: "SSR fallback excerpt",
+  category: "Tech",
+  date: "2026-04-17",
+  readTime: "5 min",
+  coverImage: null,
+  coverEmoji: "📝",
+  coverGradient: "linear-gradient(135deg, #111111, #222222)",
+  tags: ["TypeScript"],
+});
+loadBrowserScript("js/post-page.js", {
+  window: {
+    location: new URL("https://example.com/posts/post-1"),
+    BookmarkManager: {
+      isBookmarked: () => false,
+      toggle(post) {
+        fallbackBookmarkToggleCount += 1;
+        return post?.id === "post-1";
+      },
+    },
+    PageRuntime: {
+      register(pageId, pageModule) {
+        registeredPostPages.set(pageId, pageModule);
+      },
+    },
+    SiteUtils: {
+      getPostIdFromUrl: () => "post-1",
+      normalizePostId: (value) => String(value || "").trim() || null,
+      createMediaQueryList: () => ({
+        matches: false,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }),
+      getPreferredBlogReturnUrl: () => "https://example.com/blog.html",
+    },
+  },
+  document: {
+    getElementById(id) {
+      return {
+        postSkeleton: postSkeletonEl,
+        postContent: postContentEl,
+        postEmpty: postEmptyEl,
+        postArticle: postArticleEl,
+        fabBookmark: fabBookmarkEl,
+        navBookmark: navBookmarkEl,
+        postBack: postBackEl,
+        postStatus: postStatusEl,
+        initialPostData: initialPostDataScriptEl,
+      }[id] || null;
+    },
+  },
+  globals: {
+    HTMLScriptElement: FakeScriptElement,
+  },
+});
+const postPageCleanup = registeredPostPages.get("post")?.init?.();
+await Promise.resolve();
+assert.equal(
+  fabBookmarkEl.style.display,
+  "flex",
+  "post page should keep the floating bookmark control available when only the SSR fallback payload is available",
+);
+fabBookmarkEl.dispatch("click");
+assert.equal(
+  fallbackBookmarkToggleCount,
+  1,
+  "post page should still wire bookmark interactions from SSR initial data when the client API is unavailable",
+);
+postPageCleanup?.();
 expectIncludes(apiPostJs, 'upsertStructuredDataScript(html, "post-article"', "article HTML route should emit structured data");
 expectIncludes(apiPostJs, 'id="initialPostData"', "article HTML route should emit initial post data");
 expectIncludes(apiPostJs, "buildUnavailableContent", "article HTML route should distinguish upstream failures from not-found routes");

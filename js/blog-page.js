@@ -33,6 +33,9 @@
   const sanitizeCssColor = typeof SHARED_CONTENT.sanitizeCssColorValue === "function"
     ? SHARED_CONTENT.sanitizeCssColorValue
     : (value) => value;
+  const normalizeBookmarkSearchQuery = typeof SHARED_CONTENT.normalizeSearchText === "function"
+    ? SHARED_CONTENT.normalizeSearchText
+    : (value) => String(value ?? "").toLowerCase().trim().replace(/\s+/g, " ");
   const buildSharedPostSearchText = typeof SHARED_CONTENT.buildPostSearchText === "function"
     ? SHARED_CONTENT.buildPostSearchText
     : (post) => [
@@ -42,6 +45,50 @@
     ].join(" ").toLowerCase().trim().replace(/\s+/g, " ");
   const HISTORY_MODE_REPLACE = "replace";
   const HISTORY_MODE_PUSH = "push";
+
+  function normalizePageNumber(value, fallback = 1) {
+    const parsed = Number.parseInt(String(value ?? ""), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
+  function buildBookmarkListingHashFallback({ search = "", page = 1 } = {}) {
+    const params = new URLSearchParams();
+    const normalizedSearch = typeof search === "string" ? search.trim() : "";
+    const normalizedPage = normalizePageNumber(page, 1);
+
+    if (normalizedSearch) {
+      params.set("search", normalizedSearch);
+    }
+    if (normalizedPage > 1) {
+      params.set("page", String(normalizedPage));
+    }
+
+    const queryString = params.toString();
+    return `#bookmarks${queryString ? `?${queryString}` : ""}`;
+  }
+
+  function parseBookmarkListingHashFallback(hash = "") {
+    const rawHash = typeof hash === "string" ? hash.trim() : "";
+    if (!rawHash.startsWith("#bookmarks")) {
+      return {
+        active: false,
+        search: "",
+        page: 1,
+        normalizedHash: "",
+      };
+    }
+
+    const params = new URLSearchParams(rawHash.slice("#bookmarks".length).replace(/^\?/, ""));
+    const search = (params.get("search") || "").trim();
+    const page = normalizePageNumber(params.get("page"), 1);
+
+    return {
+      active: true,
+      search,
+      page,
+      normalizedHash: buildBookmarkListingHashFallback({ search, page }),
+    };
+  }
 
   function buildBookmarkSearchText(post) {
     return typeof post?._searchText === "string" && post._searchText
@@ -56,7 +103,7 @@
 
     let bookmarks = bookmarkManager.getAll();
     if (search) {
-      const query = search.toLowerCase();
+      const query = normalizeBookmarkSearchQuery(search);
       bookmarks = bookmarks.filter((post) => buildBookmarkSearchText(post).includes(query));
     }
 
@@ -77,6 +124,16 @@
     const notionApi = window.NotionAPI;
     const sharedContent = SHARED_CONTENT;
     const siteUtils = window.SiteUtils || {};
+    const parseBookmarkListingHash =
+      typeof siteUtils.parseBookmarkListingHash === "function"
+        ? siteUtils.parseBookmarkListingHash
+        : parseBookmarkListingHashFallback;
+    const buildBookmarkListingUrl =
+      typeof siteUtils.buildBookmarkListingUrl === "function"
+        ? siteUtils.buildBookmarkListingUrl
+        : ({ search = "", page = 1, pathname = "/blog.html" } = {}) => (
+          `${pathname}${buildBookmarkListingHashFallback({ search, page })}`
+        );
     const bookmarkManager = window.BookmarkManager || {
       getAll: () => [],
       isBookmarked: () => false,
@@ -93,7 +150,13 @@
     const statusEl = document.getElementById("blogStatus");
     const escapeText =
       notionApi?.escapeHtml ||
-      sharedContent.escapeHtml;
+      sharedContent.escapeHtml ||
+      ((value) => String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;"));
     const getCategoryColor =
       notionApi?.getCategoryColor ||
       sharedContent.getCategoryColor ||
@@ -115,12 +178,14 @@
     let didAttemptHydration = false;
     let isDisposed = false;
     let didNormalizeRoute = false;
+    let hashChangeHandler = null;
     const supportedCategories = new Set(DEFAULT_SUPPORTED_CATEGORIES);
 
     const params = new URLSearchParams(window.location.search);
     const rawCategory = params.get("category");
     const rawSearch = params.get("search");
     const rawPage = params.get("page");
+    const bookmarkHashState = parseBookmarkListingHash(window.location.hash);
 
     if (rawCategory) {
       currentCategory = rawCategory.trim();
@@ -139,6 +204,21 @@
       if (String(currentPage) !== rawPage) {
         didNormalizeRoute = true;
       }
+    }
+    if (bookmarkHashState.active) {
+      currentCategory = BOOKMARK_CATEGORY;
+      currentSearch = bookmarkHashState.search;
+      currentPage = bookmarkHashState.page;
+      if (
+        rawCategory ||
+        rawSearch ||
+        rawPage ||
+        (window.location.hash || "") !== bookmarkHashState.normalizedHash
+      ) {
+        didNormalizeRoute = true;
+      }
+    } else if (currentCategory === BOOKMARK_CATEGORY) {
+      didNormalizeRoute = true;
     }
     if (!supportedCategories.has(currentCategory)) {
       currentCategory = defaultCategory;
@@ -388,6 +468,14 @@
     }
 
     function buildListingUrl() {
+      if (isBookmarkView()) {
+        return buildBookmarkListingUrl({
+          pathname: window.location.pathname,
+          search: currentSearch,
+          page: currentPage,
+        });
+      }
+
       const nextParams = new URLSearchParams();
       if (currentCategory !== ALL_CATEGORY) nextParams.set("category", currentCategory);
       if (currentSearch) nextParams.set("search", currentSearch);
@@ -402,7 +490,7 @@
         ? HISTORY_MODE_PUSH
         : HISTORY_MODE_REPLACE;
       const nextUrl = buildListingUrl();
-      const currentUrl = `${window.location.pathname}${window.location.search}`;
+      const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
 
       if (nextUrl !== currentUrl) {
         if (resolvedHistoryMode === HISTORY_MODE_PUSH) {
@@ -677,6 +765,56 @@
       renderPosts();
     }
 
+    function bindBookmarkHashNavigation() {
+      hashChangeHandler = () => {
+        const nextBookmarkState = parseBookmarkListingHash(window.location.hash);
+
+        if (nextBookmarkState.active) {
+          const didChange =
+            currentCategory !== BOOKMARK_CATEGORY ||
+            currentSearch !== nextBookmarkState.search ||
+            currentPage !== nextBookmarkState.page;
+
+          currentCategory = BOOKMARK_CATEGORY;
+          currentSearch = nextBookmarkState.search;
+          currentPage = nextBookmarkState.page;
+
+          if ((window.location.hash || "") !== nextBookmarkState.normalizedHash) {
+            syncListingUrl(HISTORY_MODE_REPLACE);
+          }
+
+          if (!didChange) {
+            return;
+          }
+
+          searchInput.value = currentSearch;
+          updatePageUI();
+          renderFilters();
+          renderPosts();
+          return;
+        }
+
+        if (!isBookmarkView()) {
+          return;
+        }
+
+        if (!hasRemoteSource) {
+          syncListingUrl(HISTORY_MODE_REPLACE);
+          return;
+        }
+
+        currentCategory = ALL_CATEGORY;
+        currentSearch = "";
+        currentPage = 1;
+        searchInput.value = currentSearch;
+        updatePageUI();
+        renderFilters();
+        renderPosts();
+      };
+
+      window.addEventListener("hashchange", hashChangeHandler);
+    }
+
     if (didNormalizeRoute) {
       syncListingUrl();
     }
@@ -693,6 +831,7 @@
     gridEl.addEventListener("click", handleGridClick);
     gridEl.addEventListener("error", handleGridMediaError, true);
     emptyEl.addEventListener("click", handleEmptyStateClick);
+    bindBookmarkHashNavigation();
 
     renderPosts();
 
@@ -707,6 +846,10 @@
       gridEl.removeEventListener("click", handleGridClick);
       gridEl.removeEventListener("error", handleGridMediaError, true);
       emptyEl.removeEventListener("click", handleEmptyStateClick);
+      if (hashChangeHandler) {
+        window.removeEventListener("hashchange", hashChangeHandler);
+        hashChangeHandler = null;
+      }
       clearStatusAnnouncement();
       setGridBusy(false);
       if (statusEl) statusEl.textContent = "";

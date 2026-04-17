@@ -394,6 +394,60 @@ function buildPostUrl(postId) {
 }
 
 const BLOG_RETURN_URL_STORAGE_KEY = "spa:last-blog-url";
+const BOOKMARK_HASH_PREFIX = "#bookmarks";
+
+function normalizePageNumber(value, fallback = 1) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function buildBookmarkListingHash({ search = "", page = 1 } = {}) {
+  const params = new URLSearchParams();
+  const normalizedSearch = typeof search === "string" ? search.trim() : "";
+  const normalizedPage = normalizePageNumber(page, 1);
+
+  if (normalizedSearch) {
+    params.set("search", normalizedSearch);
+  }
+  if (normalizedPage > 1) {
+    params.set("page", String(normalizedPage));
+  }
+
+  const hashQuery = params.toString();
+  return `${BOOKMARK_HASH_PREFIX}${hashQuery ? `?${hashQuery}` : ""}`;
+}
+
+function buildBookmarkListingUrl({ search = "", page = 1, pathname = "/blog.html" } = {}) {
+  const resolvedPathname = typeof pathname === "string" && pathname.trim()
+    ? pathname.trim()
+    : "/blog.html";
+
+  return `${resolvedPathname}${buildBookmarkListingHash({ search, page })}`;
+}
+
+function parseBookmarkListingHash(hash = window.location.hash) {
+  const rawHash = typeof hash === "string" ? hash.trim() : "";
+  if (!rawHash.startsWith(BOOKMARK_HASH_PREFIX)) {
+    return {
+      active: false,
+      search: "",
+      page: 1,
+      normalizedHash: "",
+    };
+  }
+
+  const rawQuery = rawHash.slice(BOOKMARK_HASH_PREFIX.length).replace(/^\?/, "");
+  const params = new URLSearchParams(rawQuery);
+  const search = (params.get("search") || "").trim();
+  const page = normalizePageNumber(params.get("page"), 1);
+
+  return {
+    active: true,
+    search,
+    page,
+    normalizedHash: buildBookmarkListingHash({ search, page }),
+  };
+}
 
 function isBlogPageUrl(url = window.location.href) {
   try {
@@ -462,12 +516,14 @@ function getPreferredBlogReturnUrl({ fallback = "/blog.html" } = {}) {
 }
 
 window.SiteUtils = Object.freeze({
+  buildBookmarkListingUrl,
   buildPostPath,
   buildPostUrl,
   createMediaQueryList,
   getPreferredBlogReturnUrl,
   getPostIdFromUrl,
   normalizePostId,
+  parseBookmarkListingHash,
   rememberBlogReturnUrl,
   resolveDisplayImageUrl,
   sanitizeImageUrl,
@@ -1116,7 +1172,10 @@ const SPARouter = (() => {
     const u = resolveUrl(link.href);
     const c = resolveUrl(window.location.href);
     if (u.origin !== c.origin) return;
-    if (u.pathname === c.pathname && u.search === c.search && u.hash) return;
+    if (u.pathname === c.pathname && u.search === c.search) {
+      if (u.hash !== c.hash) return;
+      if (u.hash) return;
+    }
 
     e.preventDefault();
     navigate(u.href);
