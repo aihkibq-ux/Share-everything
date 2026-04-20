@@ -894,6 +894,7 @@ body.has-cursor-glow .cursor-glow {
   .empty-state p {
     font-size: 1rem;
   }
+} /* end @media (max-width: 768px) — blog / post shared mobile */
 
 @media (max-width: 540px) {
   .content-layer {

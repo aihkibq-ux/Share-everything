@@ -269,9 +269,7 @@ const NotionAPI = (() => {
     removeExpiredPostSummaryCacheEntries(POST_SUMMARY_CACHE_TTL, key);
     if (trySetSessionCacheItem(key, payload)) return;
 
-    removeExpiredPostSummaryCacheEntries(POST_SUMMARY_CACHE_TTL, key);
-    if (trySetSessionCacheItem(key, payload)) return;
-
+    // Expired-entry cleanup was not enough; evict oldest entries one by one.
     const existingEntries = collectPostSummaryCacheEntries(key);
     for (const entry of existingEntries) {
       removeCacheEntry(entry.key);

@@ -65,9 +65,9 @@
     }
 
     function syncCanonicalLocation(postId) {
-      const canonicalUrl = new URL(getCanonicalPostUrl(postId));
-      const nextUrl = new URL(canonicalUrl.href);
+      const canonicalHref = new URL(getCanonicalPostUrl(postId)).href;
       const currentUrl = new URL(window.location.href);
+      const nextUrl = new URL(canonicalHref);
 
       if (currentUrl.hash) {
         nextUrl.hash = currentUrl.hash;
@@ -77,7 +77,7 @@
         history.replaceState(history.state, "", nextUrl.href);
       }
 
-      return canonicalUrl;
+      return canonicalHref;
     }
 
     function cleanupBookmarkHandlers() {
@@ -353,8 +353,8 @@
           window.updateSeoMeta({
             title,
             description,
-            url: canonicalUrl.href,
-            canonicalUrl: canonicalUrl.href,
+            url: canonicalUrl,
+            canonicalUrl: canonicalUrl,
             ogImage: structuredDataImage,
             ogImageAlt: post.title,
             ogType: "article",
@@ -380,7 +380,7 @@
         contentEl.style.animation = shouldReuseServerMarkup ? "" : "fadeInUp 0.6s ease both";
         if (buildArticleStructuredData) {
           window.StructuredData?.set?.("post-article", buildArticleStructuredData(post, {
-            canonicalUrl: canonicalUrl.href,
+            canonicalUrl: canonicalUrl,
             defaultShareImageUrl,
             imageUrl: structuredDataImage,
           }));

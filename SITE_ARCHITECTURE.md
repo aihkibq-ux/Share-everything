@@ -104,7 +104,9 @@ Notion Database
 │  ├─ blog-page.css
 │  └─ post-page.css
 └─ scripts/
-   └─ smoke-check.mjs
+   ├─ smoke-check.mjs
+   └─ fixtures/
+      └─ notion-block-fixtures.mjs
 ```
 
 ## 4. 前端运行时分层
