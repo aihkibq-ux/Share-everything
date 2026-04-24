@@ -307,6 +307,9 @@
         : typeof error?.message === "string"
           ? error.message.trim()
           : "";
+      const normalizedDetail = detail.toLowerCase();
+      const isDatabaseObjectNotFound =
+        notionCode === "object_not_found" && normalizedDetail.includes("database");
 
       if (code === "notion_config_error") {
         if (detail.includes("NOTION_DATABASE_ID")) {
@@ -327,8 +330,8 @@
       }
 
       if (
-        status === 404 &&
-        (detail.toLowerCase().includes("database") || notionCode === "object_not_found")
+        (status === 404 || isDatabaseObjectNotFound) &&
+        (normalizedDetail.includes("database") || notionCode === "object_not_found")
       ) {
         return "NOTION_DATABASE_ID 无效，或当前 integration 无权访问这个数据库。";
       }

@@ -151,6 +151,9 @@ Notion Database
 
 - 画布初始化与重建
 - 粒子动画循环
+- 桌面端保持 `350` 粒子密度
+- 移动端使用更轻的 `80` 粒子密度
+- 移动端在 `prefers-reduced-motion: reduce` 下只绘制静态粒子背景，不启动动画循环
 - 指针位置同步
 - 鼠标 / 触摸加速
 - `visibilitychange` / `pageshow` / resize 生命周期处理
@@ -258,6 +261,7 @@ blog-page.js
 - 必要时再请求 `/api/post-data`
 - `StructuredData`、SEO、书签状态在客户端继续接管
 - 即使 `NotionAPI` 失败，SSR 首屏内容仍可继续展示
+- `api/post.js` 的 SSR 正文注入使用更宽松的 `postContent` 模板锚点匹配；模板结构轻微变化时会告警并兜底插入到 `<article>` 内
 
 ## 6. CSS 分层
 
@@ -287,6 +291,12 @@ blog-page.js
 - SSR 详情页依赖的 HTML / structured data 构建
 - Notion API 路径参数统一按 path segment 编码，避免路由参数影响上游请求路径
 
+公开访问策略说明：
+
+- 当前 `NOTION_PUBLIC_PROPERTY_NAME(S)` 为空时，使用 database-wide public mode
+- 这个模式依赖一个前提：`NOTION_DATABASE_ID` 指向的是专门用于网站发布的 public-only 内容库
+- 如果未来同一个 Notion 库要混放草稿或私密内容，需要配置 `NOTION_PUBLIC_PROPERTY_NAME(S)` 与 `NOTION_PUBLIC_STATUS_VALUES`，改为字段过滤公开内容
+
 主要缓存：
 
 | 对象 | 位置 | TTL / 容量 |
@@ -306,6 +316,11 @@ blog-page.js
 - `Retry-After` 透传
 - 公开错误 payload 序列化
 - `rejectUnsupportedReadMethod()` 统一处理只读接口的 `405`
+
+补充：
+- Notion 上游 `401` / `403` / `restricted_resource` 归为服务端配置或权限错误
+- Notion 上游 `404` + `object_not_found` 也归为配置或权限错误，避免列表页误显示泛化网络错误
+- `/api/sitemap` 复用同一套错误状态映射、`Retry-After` 透传与错误 payload 序列化
 
 ### 7.3 API 一览
 
@@ -350,7 +365,11 @@ SEO 由三层共同完成：
 - SEO runtime
 - SPA router 启动行为
 - API 405 / `no-store`
+- public content 错误状态映射与 `Retry-After` 透传
+- sitemap 错误处理复用公共映射
 - 结构化数据共享逻辑
+- 详情页 SSR 正文注入的模板锚点容错
+- 移动端粒子性能约束
 - 失效代理 `/api/notion`
 - Notion 上游请求路径参数编码
 - TTL 环境变量非法值回退
@@ -394,13 +413,15 @@ SEO 由三层共同完成：
 | `PUBLIC_POST_CACHE_TTL_MS` | `60000` | 单篇文章缓存 |
 | `NOTION_REQUEST_TIMEOUT_MS` | `12000` | 服务端 Notion 请求超时 |
 | `NOTION_BLOCK_CHILD_CONCURRENCY` | `4` | block 子节点抓取并发 |
-| `NOTION_PUBLIC_PROPERTY_NAME(S)` | 空 | 公共可见性字段名 |
+| `NOTION_PUBLIC_PROPERTY_NAME(S)` | 空 | 公共可见性字段名；为空时默认整个配置的 Notion 库都是公开内容 |
 | `NOTION_PUBLIC_STATUS_VALUES` | 空 | 公共状态候选值 |
 
 补充：
 - 浏览器侧 `notion-api.js` 当前请求超时为 `8000ms`
 - 服务端 `NOTION_REQUEST_TIMEOUT_MS` 仍是 `12000ms`
 - TTL / timeout / 并发类数字环境变量遇到无效值时回退到默认值
+- 当前生产内容库按 public-only 设计维护，因此 database-wide public mode 是预期行为
+- 如果内容库未来要混放草稿，必须配置公开字段过滤，避免未发布内容进入列表、详情页或 sitemap
 
 ## 11. 本次同步点
 
@@ -416,6 +437,12 @@ SEO 由三层共同完成：
 - `.gitattributes` 补充 `*.mjs` 与文档自身 LF 规则
 - Notion page / block / database id 在服务端请求上游前统一做路径编码
 - 服务端缓存 TTL 环境变量无效时回退默认值，避免缓存永久不过期
+- `public-content.js` 将 Notion `object_not_found` 归为配置或权限类错误
+- `/api/sitemap` 复用公开内容错误状态映射、`Retry-After` 透传与错误 payload 序列化
+- `api/post.js` 增强 SSR `postContent` 模板锚点匹配，并添加 `<article>` 兜底插入
+- `common.js` 只优化移动端粒子性能：移动端粒子数降为 `80`，桌面端继续保持 `350`
+- 移动端开启 reduced motion 时粒子背景静态绘制，不启动动画循环
+- `scripts/smoke-check.mjs` 补充以上行为的静态约束与 helper 覆盖
 
 ## 12. 复查确认
 

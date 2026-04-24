@@ -13,7 +13,14 @@ let mouseX = 0;
 let mouseY = 0;
 let targetMouseX = 0;
 let targetMouseY = 0;
-let particleCount = window.innerWidth < 768 ? 120 : 350;
+const MOBILE_PARTICLE_BREAKPOINT = 768;
+const MOBILE_PARTICLE_COUNT = 80;
+const DESKTOP_PARTICLE_COUNT = 350;
+const mobileReducedMotionQuery =
+  typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-reduced-motion: reduce)")
+    : null;
+let particleCount = getParticleCountForViewport();
 const colors = [
   "rgba(0, 255, 255, 1)",
   "rgba(77, 159, 255, 0.9)",
@@ -21,6 +28,18 @@ const colors = [
   "rgba(255, 64, 129, 0.8)",
   "rgba(255, 255, 255, 0.6)",
 ];
+
+function isMobileParticleViewport() {
+  return window.innerWidth < MOBILE_PARTICLE_BREAKPOINT;
+}
+
+function getParticleCountForViewport() {
+  return isMobileParticleViewport() ? MOBILE_PARTICLE_COUNT : DESKTOP_PARTICLE_COUNT;
+}
+
+function shouldReduceMobileParticles() {
+  return isMobileParticleViewport() && Boolean(mobileReducedMotionQuery?.matches);
+}
 
 function resize() {
   const rect = canvas?.getBoundingClientRect();
@@ -200,6 +219,10 @@ function bootstrapParticles(force = false) {
   }
 
   drawParticlesFrame(false);
+  if (shouldReduceMobileParticles()) {
+    return true;
+  }
+
   animateParticles();
   return true;
 }
@@ -242,7 +265,7 @@ window.addEventListener("resize", () => {
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     resizeTimer = null;
-    const newCount = window.innerWidth < 768 ? 120 : 350;
+    const newCount = getParticleCountForViewport();
     if (newCount !== particleCount) {
       particleCount = newCount;
       rebuildParticleBuffers();
@@ -264,6 +287,24 @@ window.addEventListener("touchend", () => (targetSpeedMultiplier = 1), {
 window.addEventListener("touchcancel", () => (targetSpeedMultiplier = 1), {
   passive: true,
 });
+
+function handleMobileReducedMotionChange() {
+  if (!isMobileParticleViewport()) return;
+
+  stopParticles();
+  clearParticleBootstrapTimer();
+  if (!document.hidden) {
+    bootstrapParticles(true);
+  }
+}
+
+if (mobileReducedMotionQuery) {
+  if (typeof mobileReducedMotionQuery.addEventListener === "function") {
+    mobileReducedMotionQuery.addEventListener("change", handleMobileReducedMotionChange);
+  } else {
+    mobileReducedMotionQuery.addListener?.(handleMobileReducedMotionChange);
+  }
+}
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => scheduleParticleBootstrap(), {

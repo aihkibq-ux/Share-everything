@@ -542,6 +542,7 @@ const vercelJson = read("vercel.json");
 const styleCss = read("css/style.css");
 const blogPageCss = read("css/blog-page.css");
 const postPageCss = read("css/post-page.css");
+const commonJs = read("js/common.js");
 const runtimeCoreJs = read("js/runtime-core.js");
 const spaRouterJs = read("js/spa-router.js");
 const bookmarkJs = read("js/bookmark.js");
@@ -569,6 +570,7 @@ const {
   "buildInitialPostPayload",
   "upsertStructuredDataScript",
   "injectInitialPostData",
+  "replacePostContent",
   "replaceHeadMeta",
   "replaceEmptyStateContent",
 ]);
@@ -649,6 +651,9 @@ expectNotIncludes(styleCss, ".fab-bookmark {", "style.css should not ship the fl
 expectIncludes(blogPageCss, ".blog-grid {", "blog-page.css should own the blog grid layout");
 expectIncludes(postPageCss, ".post-content {", "post-page.css should own the post content styles");
 expectIncludes(postPageCss, ".fab-bookmark {", "post-page.css should own the floating bookmark styles");
+expectIncludes(commonJs, "DESKTOP_PARTICLE_COUNT = 350", "particle runtime should preserve the desktop particle density");
+expectIncludes(commonJs, "MOBILE_PARTICLE_COUNT = 80", "particle runtime should use a lighter mobile particle density");
+expectIncludes(commonJs, "shouldReduceMobileParticles", "particle runtime should gate reduced-motion behavior to mobile particles");
 expectIncludes(spaRouterJs, 'script[src]:not([data-spa-runtime])', "SPA router should skip shared runtime scripts via HTML metadata");
 assert.ok(
   !spaRouterJs.includes("SHARED_RUNTIME_SCRIPT_NAMES"),
@@ -1683,7 +1688,9 @@ expectIncludes(apiPostJs, "buildUnavailableContent", "article HTML route should 
 expectIncludes(apiPostJs, "rejectUnsupportedReadMethod", "article HTML route should reuse the shared read-method guard");
 expectIncludes(apiPostJs, "getPublicPostErrorStatus", "article HTML route should reuse shared public-post error mapping");
 expectIncludes(apiPostJs, "fetchPublicPost", "article HTML route should only render posts from the public blog set");
-expectIncludes(apiPostJs, "renderPostArticle(post, { renderedContent, baseOrigin: siteOrigin })", "article HTML route should reuse the shared article-shell renderer for SSR");
+expectIncludes(apiPostJs, "renderPostArticle(post, { renderedContent, baseOrigin })", "article HTML route should reuse the shared article-shell renderer for SSR");
+expectIncludes(apiPostJs, "POST_CONTENT_PATTERN", "article HTML route should tolerate harmless postContent template attribute changes");
+expectIncludes(apiPostJs, "postContent:fallback", "article HTML route should fall back to article insertion when the postContent anchor changes");
 expectIncludes(apiPostJs, '"Cache-Control", "no-store"', "article HTML route should not cache public post responses");
 expectIncludes(apiPostJs, "replaceMarkup(", "article HTML route should use literal-safe SSR replacements for dynamic content");
 expectIncludes(apiPostJs, "upsertHeadMarkup", "article HTML route should centralize head-tag insertion and replacement");
@@ -1691,6 +1698,20 @@ expectIncludes(apiPostJs, "resolveShareImageUrl(post.coverImage, defaultShareIma
 
 const replacementSentinel = "$& :: $` :: $'";
 const escapedReplacementSentinel = "$&amp; :: $` :: $&#39;";
+const replacedPostContent = apiPostHelpers.replacePostContent(
+  '<article><div class="placeholder" id="postContent" data-template="changed"></div></article>',
+  {
+    id: "post-1",
+    title: "Rendered title",
+    tags: [],
+  },
+  {
+    renderedContent: "<p>Rendered body</p>",
+    baseOrigin: "https://example.com",
+  },
+);
+expectIncludes(replacedPostContent, 'id="postContent" style="display: block;"', "post content replacement should not depend on the original style attribute");
+expectIncludes(replacedPostContent, "Rendered body", "post content replacement should preserve SSR article body markup");
 const injectedInitialPostData = apiPostHelpers.injectInitialPostData("<main></main>", {
   title: replacementSentinel,
 });
@@ -1782,6 +1803,7 @@ expectIncludes(publicContentJs, "notion_public_config_error", "public content he
 expectIncludes(publicContentJs, "notion_timeout_error", "public content helper should preserve upstream timeout status");
 expectIncludes(publicContentJs, "Retry-After", "public content helper should preserve retry guidance for upstream rate limits");
 expectIncludes(publicContentJs, "restricted_resource", "public content helper should classify upstream Notion permission failures as server-side integration faults");
+expectIncludes(publicContentJs, "object_not_found", "public content helper should classify missing upstream Notion objects as configuration faults");
 assert.equal(
   publicContentHelpers.getPublicContentErrorStatus({
     status: 429,
@@ -1805,6 +1827,14 @@ assert.equal(
   }),
   500,
   "public content helper should treat upstream permission failures as a stable server-side configuration error",
+);
+assert.equal(
+  publicContentHelpers.getPublicContentErrorStatus({
+    status: 404,
+    notionCode: "object_not_found",
+  }),
+  500,
+  "public content helper should treat missing upstream Notion objects as a stable server-side configuration error",
 );
 const publicErrorHeaders = [];
 publicContentHelpers.applyPublicErrorHeaders({
@@ -2549,6 +2579,9 @@ assert.equal(disabledProxyResponse.statusCode, 410, "disabled Notion proxy shoul
 assert.equal(disabledProxyResponse.getHeader("cache-control"), "no-store", "disabled Notion proxy should mark responses as non-cacheable");
 expectIncludes(apiSitemapJs, "buildPostUrl", "dynamic sitemap should include article routes");
 expectIncludes(apiSitemapJs, "queryPublicPages", "dynamic sitemap should only include public posts");
+expectIncludes(apiSitemapJs, "getPublicContentErrorStatus", "dynamic sitemap should reuse public content error status mapping");
+expectIncludes(apiSitemapJs, "applyPublicErrorHeaders", "dynamic sitemap should preserve upstream retry guidance");
+expectIncludes(apiSitemapJs, "serializePublicError", "dynamic sitemap should serialize upstream errors consistently");
 expectIncludes(apiSitemapJs, '"Cache-Control", "no-store"', "dynamic sitemap should not outlive public access changes");
 expectIncludes(vercelJson, '"/posts/:id"', "Vercel should rewrite canonical article routes");
 expectIncludes(vercelJson, '"/sitemap.xml"', "Vercel should serve a dynamic sitemap");

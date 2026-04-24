@@ -78,10 +78,21 @@ function isUpstreamAuthOrPermissionError(error) {
   );
 }
 
+function isUpstreamObjectNotFoundError(error) {
+  return (
+    Number(error?.status) === 404 &&
+    error?.notionCode === "object_not_found"
+  );
+}
+
 function getPublicContentErrorStatus(error) {
   const status = Number(error?.status);
 
-  if ((status === 500 && isPublicContentConfigError(error)) || isUpstreamAuthOrPermissionError(error)) {
+  if (
+    (status === 500 && isPublicContentConfigError(error)) ||
+    isUpstreamAuthOrPermissionError(error) ||
+    isUpstreamObjectNotFoundError(error)
+  ) {
     return 500;
   }
 

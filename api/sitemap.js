@@ -3,6 +3,12 @@ const {
   getSiteOrigin,
   queryPublicPages,
 } = require("../server/notion-server");
+const {
+  applyPublicErrorHeaders,
+  getPublicContentErrorStatus,
+  rejectUnsupportedReadMethod,
+  serializePublicError,
+} = require("../server/public-content");
 
 function escapeXml(value) {
   return String(value)
@@ -19,10 +25,8 @@ function formatUrlEntry(loc, lastmod) {
 }
 
 module.exports = async function handler(req, res) {
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    res.setHeader("Allow", "GET, HEAD");
-    res.setHeader("Cache-Control", "no-store");
-    return res.status(405).json({ error: "Method not allowed" });
+  if (rejectUnsupportedReadMethod(req, res)) {
+    return undefined;
   }
 
   try {
@@ -40,8 +44,16 @@ module.exports = async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
     return res.status(200).send(xml);
   } catch (error) {
+    const status = getPublicContentErrorStatus(error);
     console.error("Failed to generate sitemap:", error);
+
+    applyPublicErrorHeaders(res, error);
     res.setHeader("Cache-Control", "no-store");
-    return res.status(500).json({ error: "Failed to generate sitemap" });
+    return res.status(status).json(
+      serializePublicError(
+        error,
+        status === 500 ? "Sitemap unavailable" : "Sitemap request failed",
+      ),
+    );
   }
 };

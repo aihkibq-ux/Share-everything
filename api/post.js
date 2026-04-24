@@ -21,6 +21,8 @@ const {
 let templatePromise = null;
 const HEAD_CLOSE_PATTERN = /<\/head>/;
 const MAIN_CLOSE_PATTERN = /<\/main>/;
+const POST_ARTICLE_CLOSE_PATTERN = /<\/article>/;
+const POST_CONTENT_PATTERN = /<div\b(?=[^>]*\bid=["']postContent["'])[^>]*>\s*<\/div>/;
 const HEAD_META_INSERTION_ANCHOR = /<meta\s+property="og:image:alt"\s+content="[^"]*"\s*\/?>/;
 
 function getTemplate() {
@@ -46,8 +48,12 @@ function replaceMarkup(html, pattern, markup, label) {
   return result;
 }
 
-function insertMarkupBefore(html, pattern, markup, indentation = "") {
-  return html.replace(pattern, (matched) => `${markup}\n${indentation}${matched}`);
+function insertMarkupBefore(html, pattern, markup, indentation = "", label = "") {
+  const result = html.replace(pattern, (matched) => `${markup}\n${indentation}${matched}`);
+  if (label && result === html) {
+    console.warn(`SSR: Pattern for "${label}" did not match template. The post.html structure may have changed.`);
+  }
+  return result;
 }
 
 function insertMarkupAfter(html, pattern, markup, indentation = "    ") {
@@ -79,7 +85,26 @@ function upsertStructuredDataScript(html, key, payload) {
 
 function injectInitialPostData(html, payload) {
   const scriptTag = `    <script id="initialPostData" type="application/json">${serializeJsonForScript(payload)}</script>`;
-  return insertMarkupBefore(html, MAIN_CLOSE_PATTERN, scriptTag, "    ");
+  return insertMarkupBefore(html, MAIN_CLOSE_PATTERN, scriptTag, "    ", "initialPostData");
+}
+
+function replacePostContent(html, post, { renderedContent, baseOrigin }) {
+  const articleMarkup = renderPostArticle(post, { renderedContent, baseOrigin });
+  const replacement = `<div id="postContent" style="display: block;">${articleMarkup}</div>`;
+  const result = html.replace(POST_CONTENT_PATTERN, () => replacement);
+
+  if (result !== html) {
+    return result;
+  }
+
+  console.warn('SSR: Pattern for "postContent" did not match template. Falling back to article insertion.');
+  return insertMarkupBefore(
+    html,
+    POST_ARTICLE_CLOSE_PATTERN,
+    replacement,
+    "        ",
+    "postContent:fallback",
+  );
 }
 
 function replaceHeadMeta(html, { title, description, url, image, imageAlt, canonicalUrl, robots, ogType }) {
@@ -234,10 +259,10 @@ module.exports = async function handler(req, res) {
     });
 
     html = replaceMarkup(html, /<div\s+id="postSkeleton"(?=[\s>])/, '<div id="postSkeleton" style="display: none;"', "postSkeleton");
-    html = html.replace(
-      /<div\s+id="postContent"\s+style="display:\s*none;?">\s*<\/div>/,
-      () => `<div id="postContent" style="display: block;">${renderPostArticle(post, { renderedContent, baseOrigin: siteOrigin })}</div>`,
-    );
+    html = replacePostContent(html, post, {
+      renderedContent,
+      baseOrigin: siteOrigin,
+    });
     html = injectInitialPostData(html, buildInitialPostPayload(post));
     html = upsertStructuredDataScript(html, "post-article", articleStructuredData);
 
