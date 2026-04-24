@@ -1,6 +1,6 @@
 # Share Everything 网站架构文档
 
-> 更新时间：2026-04-17
+> 更新时间：2026-04-24
 
 ## 1. 架构概览
 
@@ -285,6 +285,7 @@ blog-page.js
 - 详情获取
 - block 递归拉取与并发限制
 - SSR 详情页依赖的 HTML / structured data 构建
+- Notion API 路径参数统一按 path segment 编码，避免路由参数影响上游请求路径
 
 主要缓存：
 
@@ -351,6 +352,8 @@ SEO 由三层共同完成：
 - API 405 / `no-store`
 - 结构化数据共享逻辑
 - 失效代理 `/api/notion`
+- Notion 上游请求路径参数编码
+- TTL 环境变量非法值回退
 
 ### 9.2 换行规范
 
@@ -397,6 +400,7 @@ SEO 由三层共同完成：
 补充：
 - 浏览器侧 `notion-api.js` 当前请求超时为 `8000ms`
 - 服务端 `NOTION_REQUEST_TIMEOUT_MS` 仍是 `12000ms`
+- TTL / timeout / 并发类数字环境变量遇到无效值时回退到默认值
 
 ## 11. 本次同步点
 
@@ -410,3 +414,16 @@ SEO 由三层共同完成：
 - `api/notion.js` 精简为固定 `410` 禁用入口
 - 共享运行时脚本改为 `data-spa-runtime` 声明式标记
 - `.gitattributes` 补充 `*.mjs` 与文档自身 LF 规则
+- Notion page / block / database id 在服务端请求上游前统一做路径编码
+- 服务端缓存 TTL 环境变量无效时回退默认值，避免缓存永久不过期
+
+## 12. 复查确认
+
+2026-04-24 已完成一轮全仓库复查，当前确认项：
+
+- `npm.cmd run check` 通过
+- 全部 `*.js` / `*.mjs` 均通过 `node --check`
+- `git diff --check` 通过
+- HTML / CSS / JSON / Markdown / 文本格式静态审计通过，未发现缺失本地资源、重复 HTML id、CSS 括号失衡、JSON 解析错误、Markdown fence 未闭合、末尾空白或缺失文件末尾换行
+
+结论：本轮复查未发现剩余问题。

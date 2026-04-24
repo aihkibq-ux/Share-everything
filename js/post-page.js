@@ -305,6 +305,7 @@
           hasBookmarkControls: canBookmarkFromInitialData,
         });
         if (canBookmarkFromInitialData) {
+          bindResponsiveBookmarkVisibility();
           initBookmark(initialPostData);
         }
       } else {
@@ -312,9 +313,11 @@
       }
 
       return () => {
+        cleanupBookmarkHandlers();
         cleanupBackHandler();
         clearStatusAnnouncement();
         if (statusEl) statusEl.textContent = "";
+        mediaQueryCleanup?.();
       };
     }
 

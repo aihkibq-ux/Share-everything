@@ -19,13 +19,13 @@ const MAX_BLOCK_RECURSION_DEPTH = 10;
 const MAX_PAGINATION_ROUNDS = 50;
 const DEFAULT_SITE_ORIGIN = process.env.SITE_URL || "https://www.0000068.xyz";
 const DEFAULT_POST_PAGE_SIZE = 9;
-const DATABASE_METADATA_TTL_MS = Number(process.env.DATABASE_METADATA_TTL_MS || 300_000);
-const PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS = Number(process.env.PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS || 120_000);
+const DATABASE_METADATA_TTL_MS = normalizeNonNegativeNumber(process.env.DATABASE_METADATA_TTL_MS, 300_000);
+const PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS = normalizeNonNegativeNumber(process.env.PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS, 120_000);
 const PUBLIC_PAGE_QUERY_CACHE_MAX_ENTRIES = 24;
-const PUBLIC_POST_CACHE_TTL_MS = Number(process.env.PUBLIC_POST_CACHE_TTL_MS || 60_000);
+const PUBLIC_POST_CACHE_TTL_MS = normalizeNonNegativeNumber(process.env.PUBLIC_POST_CACHE_TTL_MS, 60_000);
 const PUBLIC_POST_CACHE_MAX_ENTRIES = 20;
-const NOTION_REQUEST_TIMEOUT_MS = Number(process.env.NOTION_REQUEST_TIMEOUT_MS || 12_000);
-const NOTION_BLOCK_CHILD_CONCURRENCY = Number(process.env.NOTION_BLOCK_CHILD_CONCURRENCY || 4);
+const NOTION_REQUEST_TIMEOUT_MS = normalizePositiveNumber(process.env.NOTION_REQUEST_TIMEOUT_MS, 12_000);
+const NOTION_BLOCK_CHILD_CONCURRENCY = normalizePositiveNumber(process.env.NOTION_BLOCK_CHILD_CONCURRENCY, 4);
 const DEFAULT_PUBLIC_STATUS_VALUES = ["Published", "Public", "Live", "公开", "已发布"];
 const DEFAULT_PUBLIC_STATUS_FALLBACK_VALUES = [
   ...DEFAULT_PUBLIC_STATUS_VALUES,
@@ -101,6 +101,11 @@ function normalizeName(value) {
 
 function normalizeNotionId(value) {
   return typeof value === "string" ? value.replace(/-/g, "").toLowerCase() : "";
+}
+
+function encodeNotionPathId(value) {
+  const normalized = typeof value === "string" ? value.trim() : String(value ?? "");
+  return encodeURIComponent(normalized);
 }
 
 function normalizePositiveNumber(value, fallback) {
@@ -654,7 +659,7 @@ async function getDatabaseMetadata() {
 
   if (!databaseMetadataPromise) {
     databaseMetadataPromise = (async () => {
-      const database = await requestNotionJson(`/databases/${getDatabaseId()}`);
+      const database = await requestNotionJson(`/databases/${encodeNotionPathId(getDatabaseId())}`);
       const publicAccessPolicy = buildPublicAccessPolicyFromDatabase(database);
       const contentSchema = buildContentSchema(database);
       const nextMetadata = {
@@ -674,7 +679,7 @@ async function getDatabaseMetadata() {
 }
 
 async function queryDatabasePages({ filter, schema = null } = {}) {
-  const databaseId = getDatabaseId();
+  const databaseId = encodeNotionPathId(getDatabaseId());
   const pages = [];
   let startCursor = null;
   let rounds = 0;
@@ -957,7 +962,7 @@ async function fetchAllBlockChildren(blockId, depth = 0) {
     }
 
     const data = await runWithBlockChildConcurrency(() => (
-      requestNotionJson(`/blocks/${blockId}/children?${query.toString()}`)
+      requestNotionJson(`/blocks/${encodeNotionPathId(blockId)}/children?${query.toString()}`)
     ));
     blocks.push(...data.results);
     startCursor = data.has_more ? data.next_cursor : null;
@@ -1067,13 +1072,14 @@ async function fetchPublicPost(pageId) {
     }
 
     const [page, metadata] = await Promise.all([
-      requestNotionJson(`/pages/${pageId}`),
+      requestNotionJson(`/pages/${encodeNotionPathId(pageId)}`),
       getDatabaseMetadata(),
     ]);
-    const summary = mapNotionPage(assertPublicPage(page, metadata.publicAccessPolicy), {
+    const publicPage = assertPublicPage(page, metadata.publicAccessPolicy);
+    const summary = mapNotionPage(publicPage, {
       schema: metadata.contentSchema,
     });
-    const blocks = await fetchAllBlockChildren(pageId);
+    const blocks = await fetchAllBlockChildren(publicPage.id);
     const post = buildPostPayload(summary, blocks);
     cachePublicPost(cacheKey, post);
     return post;

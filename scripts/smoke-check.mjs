@@ -2245,6 +2245,68 @@ assert.equal(
   "Deduped body",
   "server notion layer should still return the mapped block content after coalescing concurrent requests",
 );
+const encodedPathRequests = [];
+const encodedPathServerNotion = loadCommonJsModule("server/notion-server.js", [], {
+  process: {
+    env: {
+      ...process.env,
+      NOTION_TOKEN: "test-token",
+      NOTION_DATABASE_ID: "encoded/database",
+      SITE_URL: "https://example.com",
+    },
+  },
+  fetch: async (url) => {
+    const requestUrl = String(url);
+    encodedPathRequests.push(requestUrl);
+
+    if (requestUrl.endsWith("/databases/encoded%2Fdatabase")) {
+      return createJsonResponse({
+        properties: {
+          Name: { id: "title", name: "Name", type: "title" },
+        },
+      });
+    }
+
+    if (requestUrl.endsWith("/pages/unsafe%2Fpost%3Fdebug%3D1")) {
+      return createJsonResponse({
+        id: "safe-post-id",
+        parent: { database_id: "encoded/database" },
+        properties: {
+          Name: {
+            id: "title",
+            name: "Name",
+            type: "title",
+            title: [{ plain_text: "Encoded path title" }],
+          },
+        },
+      });
+    }
+
+    if (requestUrl.includes("/blocks/safe-post-id/children?")) {
+      return createJsonResponse({
+        results: [],
+        has_more: false,
+        next_cursor: null,
+      });
+    }
+
+    throw new Error(`Unexpected Notion request during encoded path test: ${requestUrl}`);
+  },
+});
+const encodedPathPost = await encodedPathServerNotion.fetchPublicPost("unsafe/post?debug=1");
+assert.equal(
+  encodedPathPost.id,
+  "safe-post-id",
+  "server notion layer should still map the public page returned for an encoded page id",
+);
+assert.ok(
+  encodedPathRequests.some((requestUrl) => requestUrl.endsWith("/pages/unsafe%2Fpost%3Fdebug%3D1")),
+  "server notion layer should encode route-supplied Notion page ids before building API paths",
+);
+assert.ok(
+  encodedPathRequests.some((requestUrl) => requestUrl.includes("/blocks/safe-post-id/children?")),
+  "server notion layer should fetch blocks using the canonical Notion page id returned by the API",
+);
 const retryFetchCounts = {
   database: 0,
   page: 0,
@@ -2340,6 +2402,129 @@ assert.equal(
   recoveredRetryPost.title,
   "Recovered title",
   "server notion layer should recover cleanly after a failed in-flight post-detail request",
+);
+let invalidPostCacheNow = 0;
+class InvalidPostCacheDate extends Date {
+  static now() {
+    return invalidPostCacheNow;
+  }
+}
+const invalidPostCacheFetchCounts = {
+  database: 0,
+  page: 0,
+  blocks: 0,
+};
+const invalidPostCacheServerNotion = loadCommonJsModule("server/notion-server.js", [], {
+  Date: InvalidPostCacheDate,
+  process: {
+    env: {
+      ...process.env,
+      NOTION_TOKEN: "test-token",
+      NOTION_DATABASE_ID: "ttl-post-database",
+      PUBLIC_POST_CACHE_TTL_MS: "not-a-number",
+      SITE_URL: "https://example.com",
+    },
+  },
+  fetch: async (url) => {
+    const requestUrl = String(url);
+
+    if (requestUrl.endsWith("/databases/ttl-post-database")) {
+      invalidPostCacheFetchCounts.database += 1;
+      return createJsonResponse({
+        properties: {
+          Name: { id: "title", name: "Name", type: "title" },
+        },
+      });
+    }
+
+    if (requestUrl.endsWith("/pages/ttl-post")) {
+      invalidPostCacheFetchCounts.page += 1;
+      return createJsonResponse({
+        id: "ttl-post",
+        parent: { database_id: "ttl-post-database" },
+        properties: {
+          Name: {
+            id: "title",
+            name: "Name",
+            type: "title",
+            title: [{ plain_text: `TTL post ${invalidPostCacheFetchCounts.page}` }],
+          },
+        },
+      });
+    }
+
+    if (requestUrl.includes("/blocks/ttl-post/children?")) {
+      invalidPostCacheFetchCounts.blocks += 1;
+      return createJsonResponse({
+        results: [],
+        has_more: false,
+        next_cursor: null,
+      });
+    }
+
+    throw new Error(`Unexpected Notion request during invalid post cache TTL test: ${requestUrl}`);
+  },
+});
+await invalidPostCacheServerNotion.fetchPublicPost("ttl-post");
+invalidPostCacheNow = 61_000;
+await invalidPostCacheServerNotion.fetchPublicPost("ttl-post");
+assert.equal(
+  invalidPostCacheFetchCounts.page,
+  2,
+  "server notion layer should fall back to the default post cache TTL when the env value is invalid",
+);
+let invalidMetadataNow = 0;
+class InvalidMetadataDate extends Date {
+  static now() {
+    return invalidMetadataNow;
+  }
+}
+const invalidMetadataFetchCounts = {
+  database: 0,
+  query: 0,
+};
+const invalidMetadataServerNotion = loadCommonJsModule("server/notion-server.js", [], {
+  Date: InvalidMetadataDate,
+  process: {
+    env: {
+      ...process.env,
+      NOTION_TOKEN: "test-token",
+      NOTION_DATABASE_ID: "ttl-metadata-database",
+      DATABASE_METADATA_TTL_MS: "not-a-number",
+      SITE_URL: "https://example.com",
+    },
+  },
+  fetch: async (url) => {
+    const requestUrl = String(url);
+
+    if (requestUrl.endsWith("/databases/ttl-metadata-database")) {
+      invalidMetadataFetchCounts.database += 1;
+      return createJsonResponse({
+        properties: {
+          Name: { id: "title", name: "Name", type: "title" },
+        },
+      });
+    }
+
+    if (requestUrl.endsWith("/databases/ttl-metadata-database/query")) {
+      invalidMetadataFetchCounts.query += 1;
+      return createJsonResponse({
+        results: [],
+        has_more: false,
+        next_cursor: null,
+      });
+    }
+
+    throw new Error(`Unexpected Notion request during invalid metadata TTL test: ${requestUrl}`);
+  },
+});
+await invalidMetadataServerNotion.queryPublicPosts();
+invalidMetadataNow = 301_000;
+await invalidMetadataServerNotion.queryPublicPosts();
+assert.equal(
+  invalidMetadataFetchCounts.database,
+  2,
+  "server notion layer should fall back to the default database metadata TTL when the env value is invalid",
 );
 assert.ok(
   !serverNotionJs.includes("鍔″繀鍚屾鏇存柊 js/notion-api.js"),
