@@ -1,6 +1,6 @@
 # Share Everything Site Architecture
 
-> Version: v2.4
+> Version: v2.5
 > Updated: 2026-04-24
 
 ## 1. Overview
@@ -32,7 +32,19 @@ Notion Database
           -> localStorage bookmarks
 ```
 
-## 2. Version v2.4 Highlights
+## 2. Version v2.5 Highlights
+
+v2.5 is a code-quality refactoring release focused on DRY compliance, defensive programming, and constant centralization.
+
+- Shared design constants `DEFAULT_COVER_GRADIENT` and `DEFAULT_CATEGORY_COLOR` are now exported from `notion-content.js` as the single source of truth.
+- `notion-api.js` and `blog-page.js` reference the canonical constants from `NotionContent` instead of maintaining independent copies.
+- `escapeHtml` in `notion-api.js` now includes a proper inline fallback instead of potentially exporting `undefined`.
+- `sanitizeCssColor` in `blog-page.js` now validates CSS color values against a strict whitelist instead of returning the input unchanged.
+- Duplicated bookmark hash URL builder functions (~50 lines) in `blog-page.js` replaced with compact inline fallbacks.
+- `restoreCoverPlaceholder` now uses `DEFAULT_COVER_GRADIENT` consistently with `renderCard`, preventing color flashes when cover images fail to load.
+- `gradientForCategory` in `notion-content.js` uses the exported constant instead of a hardcoded string.
+
+### v2.4 Highlights
 
 v2.4 refines the SPA route transition animation for a smoother, more cinematic feel, fixes card cover placeholders, and adds a project README.
 

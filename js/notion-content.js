@@ -128,7 +128,8 @@
       return gradients;
     }, {}),
   );
-  const DEFAULT_CATEGORY_COLOR = { bg: "rgba(0, 229, 255, 0.1)", color: "#00e5ff", border: "rgba(0, 229, 255, 0.2)" };
+  const DEFAULT_CATEGORY_COLOR = Object.freeze({ bg: "rgba(0, 229, 255, 0.1)", color: "#00e5ff", border: "rgba(0, 229, 255, 0.2)" });
+  const DEFAULT_COVER_GRADIENT = "linear-gradient(135deg, #1a1a2e, #16213e)";
 
   /**
    * Validates a CSS color value against a strict whitelist of safe formats.
@@ -421,7 +422,7 @@
   }
 
   function gradientForCategory(category) {
-    return CATEGORY_GRADIENTS[category] || "linear-gradient(135deg, #1a1a2e, #16213e)";
+    return CATEGORY_GRADIENTS[category] || DEFAULT_COVER_GRADIENT;
   }
 
   function mapNotionPage(page, { includeSearchText = false, schema = null } = {}) {
@@ -1075,6 +1076,8 @@
     ALL_CATEGORY,
     BOOKMARK_CATEGORY,
     BOOKMARK_ONLY_CATEGORIES,
+    DEFAULT_CATEGORY_COLOR,
+    DEFAULT_COVER_GRADIENT,
     DEFAULT_NOTION_CONTENT_PROPERTY_CANDIDATES,
     REMOTE_BLOG_CATEGORIES,
     SUPPORTED_BLOG_CATEGORIES,

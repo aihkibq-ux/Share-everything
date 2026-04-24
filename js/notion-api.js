@@ -40,12 +40,20 @@ const NotionAPI = (() => {
   const postsResponseCache = new Map();
   const postSummaryMemoryCache = new Map();
   const postSummaryTimestampCache = new Map();
-  const fallbackCategoryColor = {
+  const fallbackCategoryColor = sharedContent.DEFAULT_CATEGORY_COLOR || Object.freeze({
     bg: "rgba(0, 229, 255, 0.1)",
     color: "#00e5ff",
     border: "rgba(0, 229, 255, 0.2)",
-  };
-  const escapeHtml = sharedContent.escapeHtml;
+  });
+  const fallbackCoverGradient = sharedContent.DEFAULT_COVER_GRADIENT || "linear-gradient(135deg, #1a1a2e, #16213e)";
+  const escapeHtml = sharedContent.escapeHtml || ((value) =>
+    String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;")
+  );
 
   function normalizeSearchText(value) {
     if (typeof sharedContent.normalizeSearchText === "function") {
@@ -63,7 +71,7 @@ const NotionAPI = (() => {
       return sharedContent.gradientForCategory(category);
     }
 
-    return "linear-gradient(135deg, #1a1a2e, #16213e)";
+    return fallbackCoverGradient;
   }
 
   function getCategoryColor(category) {

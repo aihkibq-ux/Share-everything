@@ -25,15 +25,21 @@
       ? SHARED_CONTENT.getBookmarkOnlyCategories()
       : FALLBACK_BOOKMARK_ONLY_CATEGORIES,
   );
-  const FALLBACK_CATEGORY_COLOR = Object.freeze({
+  const FALLBACK_CATEGORY_COLOR = SHARED_CONTENT.DEFAULT_CATEGORY_COLOR || Object.freeze({
     bg: "rgba(0, 229, 255, 0.1)",
     color: "#00e5ff",
     border: "rgba(0, 229, 255, 0.2)",
   });
-  const DEFAULT_COVER_GRADIENT = "linear-gradient(135deg, #1a1a2e, #16213e)";
+  const DEFAULT_COVER_GRADIENT = SHARED_CONTENT.DEFAULT_COVER_GRADIENT || "linear-gradient(135deg, #1a1a2e, #16213e)";
   const sanitizeCssColor = typeof SHARED_CONTENT.sanitizeCssColorValue === "function"
     ? SHARED_CONTENT.sanitizeCssColorValue
-    : (value) => value;
+    : (value, fallback = "") => {
+      if (typeof value !== "string") return fallback;
+      const trimmed = value.trim();
+      if (/^#[0-9a-fA-F]{3,8}$/.test(trimmed)) return trimmed;
+      if (/^(rgba?|hsla?)\([0-9,.\s%]+\)$/i.test(trimmed)) return trimmed;
+      return fallback;
+    };
   const normalizeBookmarkSearchQuery = typeof SHARED_CONTENT.normalizeSearchText === "function"
     ? SHARED_CONTENT.normalizeSearchText
     : (value) => String(value ?? "").toLowerCase().trim().replace(/\s+/g, " ");
@@ -46,61 +52,7 @@
     ].join(" ").toLowerCase().trim().replace(/\s+/g, " ");
   const HISTORY_MODE_REPLACE = "replace";
   const HISTORY_MODE_PUSH = "push";
-  const BOOKMARK_HASH_PREFIX = "#bookmarks";
   const PRELOAD_COVER_IMAGE_COUNT = 3;
-
-  function normalizeBookmarkListingPage(value, fallback = 1) {
-    const parsed = Number.parseInt(String(value ?? ""), 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-  }
-
-  function buildBookmarkListingHashFallback({ search = "", page = 1 } = {}) {
-    const params = new URLSearchParams();
-    const normalizedSearch = typeof search === "string" ? search.trim() : "";
-    const normalizedPage = normalizeBookmarkListingPage(page, 1);
-
-    if (normalizedSearch) {
-      params.set("search", normalizedSearch);
-    }
-    if (normalizedPage > 1) {
-      params.set("page", String(normalizedPage));
-    }
-
-    const hashQuery = params.toString();
-    return `${BOOKMARK_HASH_PREFIX}${hashQuery ? `?${hashQuery}` : ""}`;
-  }
-
-  function buildBookmarkListingUrlFallback({ search = "", page = 1, pathname = "/blog.html" } = {}) {
-    const resolvedPathname = typeof pathname === "string" && pathname.trim()
-      ? pathname.trim()
-      : "/blog.html";
-
-    return `${resolvedPathname}${buildBookmarkListingHashFallback({ search, page })}`;
-  }
-
-  function parseBookmarkListingHashFallback(hash = "") {
-    const rawHash = typeof hash === "string" ? hash.trim() : "";
-    if (!rawHash.startsWith(BOOKMARK_HASH_PREFIX)) {
-      return {
-        active: false,
-        search: "",
-        page: 1,
-        normalizedHash: "",
-      };
-    }
-
-    const rawQuery = rawHash.slice(BOOKMARK_HASH_PREFIX.length).replace(/^\?/, "");
-    const params = new URLSearchParams(rawQuery);
-    const search = (params.get("search") || "").trim();
-    const page = normalizeBookmarkListingPage(params.get("page"), 1);
-
-    return {
-      active: true,
-      search,
-      page,
-      normalizedHash: buildBookmarkListingHashFallback({ search, page }),
-    };
-  }
 
   function buildBookmarkSearchText(post) {
     return typeof post?._searchText === "string" && post._searchText
@@ -136,14 +88,30 @@
     const notionApi = window.NotionAPI;
     const sharedContent = SHARED_CONTENT;
     const siteUtils = window.SiteUtils || {};
-    const parseBookmarkListingHash =
-      typeof siteUtils.parseBookmarkListingHash === "function"
-        ? siteUtils.parseBookmarkListingHash
-        : parseBookmarkListingHashFallback;
-    const buildBookmarkListingUrl =
-      typeof siteUtils.buildBookmarkListingUrl === "function"
-        ? siteUtils.buildBookmarkListingUrl
-        : buildBookmarkListingUrlFallback;
+    const parseBookmarkListingHash = siteUtils.parseBookmarkListingHash
+      || ((hash) => {
+        const rawHash = typeof hash === "string" ? hash.trim() : "";
+        if (!rawHash.startsWith("#bookmarks")) return { active: false, search: "", page: 1, normalizedHash: "" };
+        const params = new URLSearchParams(rawHash.slice("#bookmarks".length).replace(/^\?/, ""));
+        const search = (params.get("search") || "").trim();
+        const p = Number.parseInt(params.get("page") || "", 10);
+        const page = Number.isFinite(p) && p > 0 ? p : 1;
+        const qs = new URLSearchParams();
+        if (search) qs.set("search", search);
+        if (page > 1) qs.set("page", String(page));
+        const normalizedHash = `#bookmarks${qs.toString() ? `?${qs}` : ""}`;
+        return { active: true, search, page, normalizedHash };
+      });
+    const buildBookmarkListingUrl = siteUtils.buildBookmarkListingUrl
+      || (({ pathname = "/blog.html", search = "", page = 1 } = {}) => {
+        const qs = new URLSearchParams();
+        const s = typeof search === "string" ? search.trim() : "";
+        const p = Number.isFinite(Number.parseInt(String(page), 10)) && Number.parseInt(String(page), 10) > 0 ? Number.parseInt(String(page), 10) : 1;
+        if (s) qs.set("search", s);
+        if (p > 1) qs.set("page", String(p));
+        const resolvedPath = typeof pathname === "string" && pathname.trim() ? pathname.trim() : "/blog.html";
+        return `${resolvedPath}#bookmarks${qs.toString() ? `?${qs}` : ""}`;
+      });
     const bookmarkManager = window.BookmarkManager || {
       getAll: () => [],
       isBookmarked: () => false,
@@ -724,14 +692,10 @@
     function restoreCoverPlaceholder(placeholder) {
       if (!(placeholder instanceof HTMLElement)) return;
 
-      const coverGradient =
-        typeof siteUtils.sanitizeCoverBackground === "function"
-          ? siteUtils.sanitizeCoverBackground(placeholder.dataset.coverGradient, DEFAULT_COVER_GRADIENT)
-          : DEFAULT_COVER_GRADIENT;
       const coverEmoji = placeholder.dataset.coverEmoji || "📝";
 
       placeholder.classList.remove("blog-card-cover-img");
-      placeholder.style.background = coverGradient;
+      placeholder.style.background = DEFAULT_COVER_GRADIENT;
       placeholder.replaceChildren();
 
       const emoji = document.createElement("span");
