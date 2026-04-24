@@ -1804,6 +1804,7 @@ expectIncludes(publicContentJs, "notion_timeout_error", "public content helper s
 expectIncludes(publicContentJs, "Retry-After", "public content helper should preserve retry guidance for upstream rate limits");
 expectIncludes(publicContentJs, "restricted_resource", "public content helper should classify upstream Notion permission failures as server-side integration faults");
 expectIncludes(publicContentJs, "object_not_found", "public content helper should classify missing upstream Notion objects as configuration faults");
+expectIncludes(publicContentJs, "resourceType", "public content helper should distinguish database and page Notion errors");
 assert.equal(
   publicContentHelpers.getPublicContentErrorStatus({
     status: 429,
@@ -1836,6 +1837,45 @@ assert.equal(
   500,
   "public content helper should treat missing upstream Notion objects as a stable server-side configuration error",
 );
+assert.equal(
+  publicContentHelpers.getPublicPostErrorStatus({
+    status: 404,
+    notionCode: "object_not_found",
+    resourceType: "database",
+    detail: "Could not find database with ID: test-database",
+  }),
+  500,
+  "public post helper should treat missing database metadata as a server-side configuration error",
+);
+assert.equal(
+  publicContentHelpers.getPublicPostErrorStatus({
+    status: 400,
+    notionCode: "validation_error",
+    resourceType: "database",
+    detail: "path failed validation: path.database_id should be a valid uuid",
+  }),
+  500,
+  "public post helper should treat invalid database ids as server-side configuration errors",
+);
+assert.equal(
+  publicContentHelpers.getPublicPostErrorStatus({
+    status: 404,
+    notionCode: "object_not_found",
+    resourceType: "page",
+    detail: "Could not find page with ID: missing-post",
+  }),
+  404,
+  "public post helper should keep missing Notion pages as article-not-found responses",
+);
+assert.equal(
+  publicContentHelpers.getPublicPostErrorStatus({
+    status: 400,
+    notionCode: "validation_error",
+    resourceType: "page",
+  }),
+  404,
+  "public post helper should keep invalid route page ids as article-not-found responses",
+);
 const publicErrorHeaders = [];
 publicContentHelpers.applyPublicErrorHeaders({
   setHeader(name, value) {
@@ -1851,6 +1891,7 @@ assert.equal(
 );
 expectIncludes(serverNotionJs, "queryPublicPages", "server notion layer should expose a filtered public page query helper");
 expectIncludes(serverNotionJs, "queryPublicPosts", "server notion layer should provide a public post query helper");
+expectIncludes(serverNotionJs, "getNotionResourceType", "server notion layer should annotate upstream errors with the Notion resource type");
 expectIncludes(serverNotionJs, "PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS", "server notion layer should define a short-lived public summary cache");
 expectIncludes(serverNotionJs, "buildContentSchema", "server notion layer should derive content property mappings from database metadata");
 expectIncludes(serverNotionJs, "buildDatabaseSorts", "server notion layer should derive list sorting from the resolved schema");

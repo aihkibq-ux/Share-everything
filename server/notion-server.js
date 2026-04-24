@@ -178,6 +178,7 @@ function createNotionRequestError(message, {
   notionCode = "",
   detail = "",
   retryAfter = "",
+  resourceType = "",
   cause,
 } = {}) {
   const error = new Error(message);
@@ -187,6 +188,7 @@ function createNotionRequestError(message, {
   error.notionCode = notionCode;
   error.detail = detail;
   error.retryAfter = retryAfter;
+  error.resourceType = resourceType;
   if (cause) {
     error.cause = cause;
   }
@@ -199,6 +201,20 @@ function createPublicAccessConfigError(message, detail = "") {
     code: "notion_public_config_error",
     detail,
   });
+}
+
+function getNotionResourceType(path) {
+  const normalizedPath = String(path || "");
+  if (normalizedPath.startsWith("/databases/")) {
+    return "database";
+  }
+  if (normalizedPath.startsWith("/pages/")) {
+    return "page";
+  }
+  if (normalizedPath.startsWith("/blocks/")) {
+    return "block";
+  }
+  return "";
 }
 
 function getExplicitPublicStatusValues() {
@@ -228,6 +244,7 @@ async function requestNotionJson(path, init = {}) {
       throw createNotionRequestError("Notion API request timed out", {
         status: 504,
         code: "notion_timeout_error",
+        resourceType: getNotionResourceType(path),
         cause: error,
       });
     }
@@ -235,6 +252,7 @@ async function requestNotionJson(path, init = {}) {
     throw createNotionRequestError("Failed to reach Notion API", {
       status: 502,
       code: "notion_network_error",
+      resourceType: getNotionResourceType(path),
       cause: error,
     });
   } finally {
@@ -267,6 +285,7 @@ async function requestNotionJson(path, init = {}) {
       notionCode,
       detail: detail || rawDetail,
       retryAfter,
+      resourceType: getNotionResourceType(path),
     });
   }
 

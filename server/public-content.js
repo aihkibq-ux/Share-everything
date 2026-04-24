@@ -40,6 +40,15 @@ function readErrorDetail(error) {
   return typeof error?.message === "string" ? error.message.trim() : "";
 }
 
+function readNotionResourceType(error) {
+  const rawValue = Array.isArray(error?.resourceType) ? error.resourceType[0] : error?.resourceType;
+  return typeof rawValue === "string" ? rawValue.trim().toLowerCase() : "";
+}
+
+function getNormalizedErrorDetail(error) {
+  return readErrorDetail(error).toLowerCase();
+}
+
 function serializePublicError(error, fallbackError) {
   const payload = {
     error: fallbackError,
@@ -85,13 +94,34 @@ function isUpstreamObjectNotFoundError(error) {
   );
 }
 
+function hasDatabaseErrorContext(error) {
+  const resourceType = readNotionResourceType(error);
+  if (resourceType) {
+    return resourceType === "database";
+  }
+
+  return getNormalizedErrorDetail(error).includes("database");
+}
+
+function isUpstreamDatabaseReferenceError(error) {
+  const status = Number(error?.status);
+  return (
+    hasDatabaseErrorContext(error) &&
+    (
+      status === 404 ||
+      (status === 400 && error?.notionCode === "validation_error")
+    )
+  );
+}
+
 function getPublicContentErrorStatus(error) {
   const status = Number(error?.status);
 
   if (
     (status === 500 && isPublicContentConfigError(error)) ||
     isUpstreamAuthOrPermissionError(error) ||
-    isUpstreamObjectNotFoundError(error)
+    isUpstreamObjectNotFoundError(error) ||
+    isUpstreamDatabaseReferenceError(error)
   ) {
     return 500;
   }
@@ -109,10 +139,18 @@ function getPublicContentErrorStatus(error) {
 
 function isMissingPublicPostError(error) {
   const status = Number(error?.status);
+  if (error?.code === "notion_page_not_public") {
+    return true;
+  }
+
+  if (isUpstreamDatabaseReferenceError(error)) {
+    return false;
+  }
+
   return (
+    isUpstreamObjectNotFoundError(error) ||
     status === 404 ||
-    (status === 400 && error?.notionCode === "validation_error") ||
-    error?.code === "notion_page_not_public"
+    (status === 400 && error?.notionCode === "validation_error")
   );
 }
 

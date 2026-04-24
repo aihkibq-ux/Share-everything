@@ -290,6 +290,7 @@ blog-page.js
 - block 递归拉取与并发限制
 - SSR 详情页依赖的 HTML / structured data 构建
 - Notion API 路径参数统一按 path segment 编码，避免路由参数影响上游请求路径
+- Notion API 错误会标注来源资源类型（database / page / block），供公共响应层区分配置故障与文章不存在
 
 公开访问策略说明：
 
@@ -319,7 +320,8 @@ blog-page.js
 
 补充：
 - Notion 上游 `401` / `403` / `restricted_resource` 归为服务端配置或权限错误
-- Notion 上游 `404` + `object_not_found` 也归为配置或权限错误，避免列表页误显示泛化网络错误
+- 列表 / sitemap 这类数据库级接口会把 Notion 上游 `404` + `object_not_found` 归为配置或权限错误，避免误显示泛化网络错误
+- 文章详情错误映射会依据 Notion 错误的 `resourceType` 区分：database 缺失或非法是服务端配置错误，page 缺失或非法是文章不存在
 - `/api/sitemap` 复用同一套错误状态映射、`Retry-After` 透传与错误 payload 序列化
 
 ### 7.3 API 一览
@@ -365,7 +367,7 @@ SEO 由三层共同完成：
 - SEO runtime
 - SPA router 启动行为
 - API 405 / `no-store`
-- public content 错误状态映射与 `Retry-After` 透传
+- public content 错误状态映射、文章详情 `resourceType` 分类与 `Retry-After` 透传
 - sitemap 错误处理复用公共映射
 - 结构化数据共享逻辑
 - 详情页 SSR 正文注入的模板锚点容错
@@ -437,7 +439,7 @@ SEO 由三层共同完成：
 - `.gitattributes` 补充 `*.mjs` 与文档自身 LF 规则
 - Notion page / block / database id 在服务端请求上游前统一做路径编码
 - 服务端缓存 TTL 环境变量无效时回退默认值，避免缓存永久不过期
-- `public-content.js` 将 Notion `object_not_found` 归为配置或权限类错误
+- `public-content.js` 基于 Notion `resourceType` 区分数据库配置错误与文章不存在，避免详情页把错库或无权限误报为 404
 - `/api/sitemap` 复用公开内容错误状态映射、`Retry-After` 透传与错误 payload 序列化
 - `api/post.js` 增强 SSR `postContent` 模板锚点匹配，并添加 `<article>` 兜底插入
 - `common.js` 只优化移动端粒子性能：移动端粒子数降为 `80`，桌面端继续保持 `350`
