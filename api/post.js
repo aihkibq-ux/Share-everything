@@ -17,6 +17,11 @@ const {
   rejectUnsupportedReadMethod,
   readQueryString,
 } = require("../server/public-content");
+const {
+  applyHtmlSecurityHeaders,
+  buildContentSecurityPolicy,
+  createCspNonce,
+} = require("../server/security-policy");
 
 let templatePromise = null;
 const HEAD_CLOSE_PATTERN = /<\/head>/;
@@ -24,6 +29,8 @@ const MAIN_CLOSE_PATTERN = /<\/main>/;
 const POST_ARTICLE_CLOSE_PATTERN = /<\/article>/;
 const POST_CONTENT_PATTERN = /<div\b(?=[^>]*\bid=["']postContent["'])[^>]*>\s*<\/div>/;
 const HEAD_META_INSERTION_ANCHOR = /<meta\s+property="og:image:alt"\s+content="[^"]*"\s*\/?>/;
+const META_TAG_PATTERN = /<meta\b[^>]*>/gi;
+const HTTP_EQUIV_ATTRIBUTE_PATTERN = /\bhttp-equiv\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i;
 
 function getTemplate() {
   if (!templatePromise) {
@@ -41,8 +48,12 @@ function serializeJsonForScript(value) {
 }
 
 function replaceMarkup(html, pattern, markup, label) {
-  const result = html.replace(pattern, () => markup);
-  if (label && result === html) {
+  let didMatch = false;
+  const result = html.replace(pattern, () => {
+    didMatch = true;
+    return markup;
+  });
+  if (label && !didMatch) {
     console.warn(`SSR: Pattern for "${label}" did not match template. The post.html structure may have changed.`);
   }
   return result;
@@ -69,9 +80,47 @@ function upsertHeadMarkup(html, pattern, markup) {
   return insertMarkupAfter(html, HEAD_META_INSERTION_ANCHOR, markup);
 }
 
-function upsertStructuredDataScript(html, key, payload) {
+function isContentSecurityPolicyMetaTag(metaTag) {
+  const match = String(metaTag || "").match(HTTP_EQUIV_ATTRIBUTE_PATTERN);
+  const httpEquiv = (match?.[1] ?? match?.[2] ?? match?.[3] ?? "").trim().toLowerCase();
+  return httpEquiv === "content-security-policy";
+}
+
+function replaceContentSecurityPolicyMeta(html, options = {}) {
+  const markup = `<meta http-equiv="Content-Security-Policy" content="${escapeAttribute(
+    buildContentSecurityPolicy({
+      ...options,
+      includeFrameAncestors: false,
+    }),
+  )}" />`;
+  let didReplace = false;
+  const result = html.replace(META_TAG_PATTERN, (metaTag) => {
+    if (!isContentSecurityPolicyMetaTag(metaTag)) {
+      return metaTag;
+    }
+
+    if (didReplace) {
+      return "";
+    }
+
+    didReplace = true;
+    return markup;
+  });
+
+  if (didReplace) {
+    return result;
+  }
+
+  return insertMarkupAfter(html, HEAD_META_INSERTION_ANCHOR, markup);
+}
+
+function buildNonceAttribute(scriptNonce = "") {
+  return scriptNonce ? ` nonce="${escapeAttribute(scriptNonce)}"` : "";
+}
+
+function upsertStructuredDataScript(html, key, payload, { scriptNonce = "" } = {}) {
   const marker = `data-structured-data="${escapeAttribute(key)}"`;
-  const scriptTag = `    <script type="application/ld+json" ${marker}>${serializeJsonForScript(payload)}</script>`;
+  const scriptTag = `    <script type="application/ld+json"${buildNonceAttribute(scriptNonce)} ${marker}>${serializeJsonForScript(payload)}</script>`;
   const existingPattern = new RegExp(
     `<script type="application/ld\\+json"[^>]*${marker}[^>]*>[\\s\\S]*?<\\/script>`,
   );
@@ -83,8 +132,8 @@ function upsertStructuredDataScript(html, key, payload) {
   return insertMarkupBefore(html, HEAD_CLOSE_PATTERN, scriptTag, "  ");
 }
 
-function injectInitialPostData(html, payload) {
-  const scriptTag = `    <script id="initialPostData" type="application/json">${serializeJsonForScript(payload)}</script>`;
+function injectInitialPostData(html, payload, { scriptNonce = "" } = {}) {
+  const scriptTag = `    <script id="initialPostData" type="application/json"${buildNonceAttribute(scriptNonce)}>${serializeJsonForScript(payload)}</script>`;
   return insertMarkupBefore(html, MAIN_CLOSE_PATTERN, scriptTag, "    ", "initialPostData");
 }
 
@@ -211,7 +260,7 @@ function renderFallbackPage(html, fallback, { url, canonicalUrl, image, imageAlt
   });
   nextHtml = replaceMarkup(nextHtml, /<div\s+id="postSkeleton"(?=[\s>])/, '<div id="postSkeleton" style="display: none;"', "fallback:postSkeleton");
   nextHtml = replaceMarkup(nextHtml, /id="postEmpty"\s+style="display:\s*none;?"/, 'id="postEmpty" style="display: flex;"', "fallback:postEmpty");
-  return nextHtml;
+  return replaceContentSecurityPolicyMeta(nextHtml);
 }
 
 module.exports = async function handler(req, res) {
@@ -235,10 +284,12 @@ module.exports = async function handler(req, res) {
     });
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
+    applyHtmlSecurityHeaders(res);
     return res.status(404).send(html);
   }
 
   try {
+    const scriptNonce = createCspNonce();
     const post = await fetchPublicPost(routeId);
     const postUrl = buildPostUrl(post.id);
     const pageTitle = `${post.title} — Share Everything`;
@@ -257,17 +308,19 @@ module.exports = async function handler(req, res) {
       robots: "index, follow",
       ogType: "article",
     });
+    html = replaceContentSecurityPolicyMeta(html, { scriptNonce });
 
     html = replaceMarkup(html, /<div\s+id="postSkeleton"(?=[\s>])/, '<div id="postSkeleton" style="display: none;"', "postSkeleton");
     html = replacePostContent(html, post, {
       renderedContent,
       baseOrigin: siteOrigin,
     });
-    html = injectInitialPostData(html, buildInitialPostPayload(post));
-    html = upsertStructuredDataScript(html, "post-article", articleStructuredData);
+    html = injectInitialPostData(html, buildInitialPostPayload(post), { scriptNonce });
+    html = upsertStructuredDataScript(html, "post-article", articleStructuredData, { scriptNonce });
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
+    applyHtmlSecurityHeaders(res, { scriptNonce });
     return res.status(200).send(html);
   } catch (error) {
     const status = getPublicPostErrorStatus(error);
@@ -285,6 +338,7 @@ module.exports = async function handler(req, res) {
     });
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
+    applyHtmlSecurityHeaders(res);
     return res.status(status).send(html);
   }
 };

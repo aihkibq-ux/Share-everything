@@ -61,8 +61,17 @@ Notion Database
 | API | `no-store` |
 
 补充：
-- `GET/HEAD` 之外的方法统一通过共享 helper 返回 `405`
+- `GET` 之外的方法统一通过共享 helper 返回 `405`
 - 所有公开 API 的 `405` 也显式带 `Cache-Control: no-store`
+
+### 2.4 CSP 策略
+
+- Vercel 全局响应头只负责 `frame-ancestors 'none'` 与 `X-Frame-Options: DENY`
+- 静态 HTML 模板通过 `<meta http-equiv="Content-Security-Policy">` 声明默认资源策略，默认不允许 inline script
+- `server/security-policy.js` 是 CSP 与安全响应头的单一构造来源；静态模板的 CSP meta 由 smoke check 和该 builder 做一致性校验
+- 文章 SSR 路由由 `api/post.js` 生成请求级 nonce，并同时写入响应头 CSP、模板 CSP meta、`Article` JSON-LD 与 `#initialPostData`
+- `connect-src` 只允许 `'self'`，浏览器端数据请求应继续走同源语义 API
+- 运行时 `StructuredData` 只有在页面已有 nonce script 时才会新建 JSON-LD script；从静态页 SPA 跳转到文章页时，SEO 依赖服务端直出文章页
 
 ## 3. 仓库结构
 
@@ -84,7 +93,8 @@ Notion Database
 │  └─ notion.js
 ├─ server/
 │  ├─ notion-server.js
-│  └─ public-content.js
+│  ├─ public-content.js
+│  └─ security-policy.js
 ├─ js/
 │  ├─ notion-content.js
 │  ├─ runtime-core.js
@@ -328,10 +338,10 @@ blog-page.js
 
 | 路由 | 方法 | 功能 |
 |---|---|---|
-| `/api/posts-data` | `GET, HEAD` | 文章列表 JSON |
-| `/api/post-data` | `GET, HEAD` | 单篇文章 JSON |
-| `/api/post` | `GET, HEAD` | 文章详情 SSR HTML |
-| `/api/sitemap` | `GET, HEAD` | 动态 sitemap |
+| `/api/posts-data` | `GET` | 文章列表 JSON |
+| `/api/post-data` | `GET` | 单篇文章 JSON |
+| `/api/post` | `GET` | 文章详情 SSR HTML |
+| `/api/sitemap` | `GET` | 动态 sitemap |
 | `/api/notion` | 任意 | 已禁用，固定返回 `410` |
 
 补充：
@@ -353,6 +363,7 @@ SEO 由三层共同完成：
 - 本地收藏视图写入 `noindex, nofollow`
 - 收藏视图 canonical 收敛到 `/blog.html`
 - 详情页 structured data 统一使用共享 builder
+- 详情页 JSON-LD 由 SSR nonce CSP 保护，不在全站 CSP 中放开 `unsafe-inline`
 
 ## 9. 测试与约束
 
@@ -417,6 +428,7 @@ SEO 由三层共同完成：
 | `NOTION_BLOCK_CHILD_CONCURRENCY` | `4` | block 子节点抓取并发 |
 | `NOTION_PUBLIC_PROPERTY_NAME(S)` | 空 | 公共可见性字段名；为空时默认整个配置的 Notion 库都是公开内容 |
 | `NOTION_PUBLIC_STATUS_VALUES` | 空 | 公共状态候选值 |
+| `EXPOSE_PUBLIC_ERROR_DETAILS` | 空 | 仅本地排障时设为 `true`，公开 API 才会返回上游错误 detail |
 
 补充：
 - 浏览器侧 `notion-api.js` 当前请求超时为 `8000ms`
@@ -442,6 +454,12 @@ SEO 由三层共同完成：
 - `public-content.js` 基于 Notion `resourceType` 区分数据库配置错误与文章不存在，避免详情页把错库或无权限误报为 404
 - `/api/sitemap` 复用公开内容错误状态映射、`Retry-After` 透传与错误 payload 序列化
 - `api/post.js` 增强 SSR `postContent` 模板锚点匹配，并添加 `<article>` 兜底插入
+- `server/security-policy.js` 统一生成 CSP 与 HTML 安全响应头；静态模板 CSP meta 与 SSR 响应头共享同一策略来源
+- `api/post.js` 的 SSR JSON-LD 与 `#initialPostData` 改为请求级 nonce，并同步更新响应头 CSP 与模板 CSP meta
+- `runtime-core.js` 只在当前 `head` 已有 nonce script 时创建运行时 JSON-LD，避免 SPA 跳转时制造不被当前 CSP 授权的 script
+- `notion-content.js` 与 `site-utils.js` 的图片 URL 策略和 CSP 对齐：外链只允许 `https:`，同源资源继续允许
+- `public-content.js` 将公开读接口收紧为 `GET`，`HEAD` 直接返回 `405`，避免探测请求触发完整 Notion 查询
+- 公开 API 默认不再返回上游错误 `detail`；仅当 `EXPOSE_PUBLIC_ERROR_DETAILS=true` 时用于本地排障
 - `common.js` 只优化移动端粒子性能：移动端粒子数降为 `80`，桌面端继续保持 `350`
 - 移动端开启 reduced motion 时粒子背景静态绘制，不启动动画循环
 - `scripts/smoke-check.mjs` 补充以上行为的静态约束与 helper 覆盖

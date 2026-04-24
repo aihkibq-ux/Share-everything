@@ -375,6 +375,14 @@ function expectNotIncludes(source, needle, message) {
   assert.ok(!source.includes(needle), message);
 }
 
+function extractContentSecurityPolicyMetaContent(htmlSource) {
+  const match = String(htmlSource || "").match(
+    /<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]*)"\s*\/?>/i,
+  );
+  assert.ok(match, "HTML should include a Content-Security-Policy meta tag");
+  return match[1];
+}
+
 function normalizeHtml(source) {
   return String(source || "")
     .replace(/>\s+</g, "><")
@@ -532,6 +540,7 @@ function escapeRegex(value) {
   "api/post.js",
   "api/sitemap.js",
   "server/public-content.js",
+  "server/security-policy.js",
   "server/notion-server.js",
 ].forEach(checkSyntax);
 const indexHtml = read("index.html");
@@ -560,6 +569,7 @@ const publicContentJs = read("server/public-content.js");
 const serverNotionJs = read("server/notion-server.js");
 const notionContentHelpers = loadCommonJsModule("js/notion-content.js");
 const publicContentHelpers = loadCommonJsModule("server/public-content.js");
+const securityPolicyHelpers = loadCommonJsModule("server/security-policy.js");
 const apiNotionHandler = loadCommonJsModule("api/notion.js");
 const apiPostHandler = loadCommonJsModule("api/post.js");
 const apiPostsDataHandler = loadCommonJsModule("api/posts-data.js");
@@ -570,6 +580,7 @@ const {
   "buildInitialPostPayload",
   "upsertStructuredDataScript",
   "injectInitialPostData",
+  "replaceContentSecurityPolicyMeta",
   "replacePostContent",
   "replaceHeadMeta",
   "replaceEmptyStateContent",
@@ -622,7 +633,14 @@ const sharedRuntimeScriptSources = [
   "/js/seo-meta.js",
   "/js/spa-router.js",
 ];
+const expectedStaticContentSecurityPolicy = securityPolicyHelpers.buildStaticContentSecurityPolicy();
 pageHtmlByLabel.forEach(([label, htmlSource]) => {
+  assert.equal(
+    extractContentSecurityPolicyMetaContent(htmlSource),
+    expectedStaticContentSecurityPolicy,
+    `${label} static CSP meta should match the shared security policy builder`,
+  );
+
   sharedRuntimeScriptSources.forEach((src) => {
     expectIncludes(
       htmlSource,
@@ -674,7 +692,9 @@ const siteUtilsHarness = loadBrowserScript("js/site-utils.js", {
       resolveDisplayImageUrl: (value, baseOrigin) => {
         if (!value || typeof value !== "string") return null;
         const parsed = new URL(value, baseOrigin);
-        return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : null;
+        return parsed.protocol === "https:" || parsed.origin === new URL(baseOrigin).origin
+          ? parsed.href
+          : null;
       },
     },
   },
@@ -705,6 +725,39 @@ assert.equal(
   ),
   "https://example.com/fallback.png",
   "SiteUtils should drop expiring share-image URLs in favor of stable fallbacks",
+);
+assert.equal(
+  siteUtilsHarness.window.SiteUtils.sanitizeImageUrl("http://cdn.example.com/cover.png"),
+  null,
+  "SiteUtils should reject external http images through the shared renderer path",
+);
+assert.equal(
+  siteUtilsHarness.window.SiteUtils.sanitizeImageUrl("/cover.png"),
+  "https://example.com/cover.png",
+  "SiteUtils should keep same-origin image URLs through the shared renderer path",
+);
+const siteUtilsFallbackHarness = loadBrowserScript("js/site-utils.js", {
+  window: {
+    location: new URL("https://example.com/blog.html"),
+  },
+  document: {
+    referrer: "",
+  },
+});
+assert.equal(
+  siteUtilsFallbackHarness.window.SiteUtils.sanitizeImageUrl("http://cdn.example.com/cover.png"),
+  null,
+  "SiteUtils fallback should reject external http images that production CSP blocks",
+);
+assert.equal(
+  siteUtilsFallbackHarness.window.SiteUtils.sanitizeImageUrl("https://cdn.example.com/cover.png"),
+  "https://cdn.example.com/cover.png",
+  "SiteUtils fallback should allow external https images",
+);
+assert.equal(
+  siteUtilsFallbackHarness.window.SiteUtils.sanitizeImageUrl("/cover.png"),
+  "https://example.com/cover.png",
+  "SiteUtils fallback should allow same-origin images",
 );
 assert.equal(
   siteUtilsHarness.window.SiteUtils.getPreferredBlogReturnUrl(),
@@ -819,6 +872,9 @@ assert.equal(
 );
 
 expectIncludes(runtimeCoreJs, 'application/ld+json', "runtime-core.js should own structured data script management");
+expectIncludes(runtimeCoreJs, "readStructuredDataNonce", "runtime-core.js should only create JSON-LD nodes when a request nonce is available");
+expectIncludes(runtimeCoreJs, "document.head?.querySelector", "runtime-core.js should only trust nonce-bearing scripts already present in the active document head");
+expectIncludes(runtimeCoreJs, 'script.setAttribute("nonce", nonce)', "runtime-core.js should preserve CSP nonce protection for runtime JSON-LD updates");
 expectIncludes(runtimeCoreJs, "page-progress", "runtime-core.js should wire the shared page progress bar");
 expectIncludes(runtimeCoreJs, "focusSpaContent", "runtime-core.js should expose SPA focus management");
 expectIncludes(runtimeCoreJs, "const PageRuntime = (() => {", "runtime-core.js should own page module registration and cleanup");
@@ -840,6 +896,7 @@ expectIncludes(notionContentJs, "function mapNotionPage", "shared notion content
 expectIncludes(notionContentJs, "function renderBlocks", "shared notion content module should own block rendering");
 expectIncludes(notionContentJs, "function renderPostArticle", "shared notion content module should own article-shell rendering for both SSR and CSR");
 expectIncludes(notionContentJs, "resolveDisplayImageUrl", "shared notion content module should expose a display-safe image resolver");
+expectIncludes(notionContentJs, 'const SAFE_IMAGE_PROTOCOLS = new Set(["https:"])', "shared notion content module should align external image URL policy with production CSP");
 expectIncludes(notionContentJs, "resolveNotionContentSchema", "shared notion content module should resolve Notion schemas for renamed database properties");
 expectIncludes(notionContentJs, "REMOTE_BLOG_CATEGORIES", "shared notion content module should centralize remote blog category definitions");
 expectIncludes(notionContentJs, "BOOKMARK_ONLY_CATEGORIES", "shared notion content module should centralize bookmark-only category definitions");
@@ -865,6 +922,16 @@ assert.ok(
     (category) => category.name && category.name !== notionContentHelpers.ALL_CATEGORY,
   ),
   "shared notion content module should publish the remote category list for client pages",
+);
+assert.equal(
+  notionContentHelpers.resolveDisplayImageUrl("http://cdn.example.com/cover.png", "https://example.com"),
+  null,
+  "shared notion content helpers should reject external http images that production CSP would block",
+);
+assert.equal(
+  notionContentHelpers.resolveDisplayImageUrl("/cover.png", "http://localhost:3000"),
+  "http://localhost:3000/cover.png",
+  "shared notion content helpers should still allow same-origin local image URLs",
 );
 notionBlockFixtures.forEach(runNotionBlockFixture);
 const renderedArticleHtml = normalizeHtml(notionContentHelpers.renderPostArticle({
@@ -1695,9 +1762,15 @@ expectIncludes(apiPostJs, '"Cache-Control", "no-store"', "article HTML route sho
 expectIncludes(apiPostJs, "replaceMarkup(", "article HTML route should use literal-safe SSR replacements for dynamic content");
 expectIncludes(apiPostJs, "upsertHeadMarkup", "article HTML route should centralize head-tag insertion and replacement");
 expectIncludes(apiPostJs, "resolveShareImageUrl(post.coverImage, defaultShareImageUrl, siteOrigin)", "article HTML route should resolve og:image against the site origin consistently");
+expectIncludes(apiPostJs, "../server/security-policy", "article HTML route should reuse the shared security policy builder");
+expectIncludes(apiPostJs, "createCspNonce", "article HTML route should use per-request nonces for inline JSON data");
+expectIncludes(apiPostJs, "applyHtmlSecurityHeaders", "article HTML route should emit nonce-aware CSP headers from the SSR function");
+expectIncludes(apiPostJs, "replaceContentSecurityPolicyMeta", "article HTML route should keep template CSP meta in sync with the response nonce");
+expectNotIncludes(apiPostJs, "script-src-elem 'self' 'unsafe-inline'", "article HTML route should not allow arbitrary inline script elements");
 
 const replacementSentinel = "$& :: $` :: $'";
 const escapedReplacementSentinel = "$&amp; :: $` :: $&#39;";
+const nonceSentinel = "nonce-test-123";
 const replacedPostContent = apiPostHelpers.replacePostContent(
   '<article><div class="placeholder" id="postContent" data-template="changed"></div></article>',
   {
@@ -1714,8 +1787,11 @@ expectIncludes(replacedPostContent, 'id="postContent" style="display: block;"', 
 expectIncludes(replacedPostContent, "Rendered body", "post content replacement should preserve SSR article body markup");
 const injectedInitialPostData = apiPostHelpers.injectInitialPostData("<main></main>", {
   title: replacementSentinel,
+}, {
+  scriptNonce: nonceSentinel,
 });
 expectIncludes(injectedInitialPostData, replacementSentinel, "initial post data injection should preserve replacement tokens literally");
+expectIncludes(injectedInitialPostData, `nonce="${nonceSentinel}"`, "initial post data injection should carry the request CSP nonce");
 const initialPostPayload = apiPostHelpers.buildInitialPostPayload({
   id: "post-1",
   title: "Payload title",
@@ -1737,8 +1813,62 @@ assert.ok(
 
 const structuredDataHtml = apiPostHelpers.upsertStructuredDataScript("<head></head>", "post-article", {
   headline: replacementSentinel,
+}, {
+  scriptNonce: nonceSentinel,
 });
 expectIncludes(structuredDataHtml, replacementSentinel, "structured data injection should preserve replacement tokens literally");
+expectIncludes(structuredDataHtml, `nonce="${nonceSentinel}"`, "structured data injection should carry the request CSP nonce");
+const nonceContentSecurityPolicy = securityPolicyHelpers.buildContentSecurityPolicy({
+  scriptNonce: nonceSentinel,
+});
+expectIncludes(
+  nonceContentSecurityPolicy,
+  `script-src 'self' 'nonce-${nonceSentinel}'`,
+  "article HTML route should allow inline JSON scripts only through the request nonce",
+);
+expectIncludes(
+  nonceContentSecurityPolicy,
+  "frame-ancestors 'none'",
+  "article HTML route CSP should preserve clickjacking protection when emitted as a header",
+);
+expectNotIncludes(
+  nonceContentSecurityPolicy,
+  "script-src 'self' 'unsafe-inline'",
+  "article HTML route nonce CSP should not fall back to unsafe inline scripts",
+);
+expectNotIncludes(
+  nonceContentSecurityPolicy,
+  "script-src-elem 'self' 'unsafe-inline'",
+  "article HTML route nonce CSP should not allow arbitrary inline script elements",
+);
+const replacedCspMeta = apiPostHelpers.replaceContentSecurityPolicyMeta(
+  '<head><meta http-equiv="Content-Security-Policy" content="old" /></head>',
+  { scriptNonce: nonceSentinel },
+);
+expectIncludes(replacedCspMeta, `nonce-${nonceSentinel}`, "article HTML route should mirror the request nonce into the CSP meta tag");
+expectNotIncludes(replacedCspMeta, "frame-ancestors", "article HTML route should avoid frame-ancestors in meta CSP where browsers ignore it");
+const reorderedCspMeta = apiPostHelpers.replaceContentSecurityPolicyMeta(
+  "<head><meta content='old' data-test='1' http-equiv='content-security-policy'></head>",
+  { scriptNonce: nonceSentinel },
+);
+expectIncludes(reorderedCspMeta, `nonce-${nonceSentinel}`, "article HTML route should replace CSP meta tags regardless of attribute order or quote style");
+expectNotIncludes(reorderedCspMeta, "content='old'", "article HTML route should not leave an old CSP meta policy behind when attributes are reordered");
+assert.equal(
+  (reorderedCspMeta.match(/http-equiv="Content-Security-Policy"/g) || []).length,
+  1,
+  "article HTML route should emit one canonical CSP meta tag after replacing a reordered template tag",
+);
+const dedupedCspMeta = apiPostHelpers.replaceContentSecurityPolicyMeta(
+  "<head><meta http-equiv=Content-Security-Policy content=old><meta content=\"legacy\" http-equiv=\"Content-Security-Policy\"></head>",
+  { scriptNonce: nonceSentinel },
+);
+assert.equal(
+  (dedupedCspMeta.match(/http-equiv="Content-Security-Policy"/g) || []).length,
+  1,
+  "article HTML route should collapse duplicate CSP meta tags to avoid intersecting policies",
+);
+expectNotIncludes(dedupedCspMeta, "content=old", "article HTML route should remove duplicate unquoted CSP meta policies");
+expectNotIncludes(dedupedCspMeta, 'content="legacy"', "article HTML route should remove duplicate quoted CSP meta policies");
 
 const replacedHeadMeta = apiPostHelpers.replaceHeadMeta(`<!doctype html><html><head>
 <title>Old</title>
@@ -1764,6 +1894,40 @@ assert.ok(
   !replacedHeadMeta.includes("<title><title>Old</title></title>"),
   "head metadata replacement should not reinsert the original title through replacement tokens",
 );
+const originalConsoleWarn = console.warn;
+const sameValueReplacementWarnings = [];
+console.warn = (...args) => {
+  sameValueReplacementWarnings.push(args.join(" "));
+};
+try {
+  apiPostHelpers.replaceHeadMeta(`<!doctype html><html><head>
+<title>Same title</title>
+<meta name="description" content="Same description" />
+<meta property="og:title" content="Same title" />
+<meta property="og:description" content="Same description" />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://example.com/post.html" />
+<meta property="og:image" content="https://example.com/favicon.png?v=2" />
+<meta property="og:image:alt" content="Share Everything" />
+<link rel="canonical" href="https://example.com/post.html" />
+</head></html>`, {
+    title: "Same title",
+    description: "Same description",
+    url: "https://example.com/post.html",
+    image: "https://example.com/favicon.png?v=2",
+    imageAlt: "Share Everything",
+    canonicalUrl: "https://example.com/post.html",
+    robots: "",
+    ogType: "website",
+  });
+} finally {
+  console.warn = originalConsoleWarn;
+}
+assert.equal(
+  sameValueReplacementWarnings.length,
+  0,
+  "head metadata replacement should not warn when a template pattern matched but the replacement value is unchanged",
+);
 
 const replacedEmptyState = apiPostHelpers.replaceEmptyStateContent(
   '<div class="empty-state" id="postEmpty"><svg></svg><p>old</p><p style="font-size: 0.85rem;"><a href="/old">old</a></p></div>',
@@ -1780,8 +1944,12 @@ assert.equal(
 const postRouteMethodNotAllowedRes = createApiResponseRecorder();
 await apiPostHandler({ method: "POST", query: {} }, postRouteMethodNotAllowedRes);
 assert.equal(postRouteMethodNotAllowedRes.statusCode, 405, "article HTML route should reject unsupported methods with HTTP 405");
-assert.equal(postRouteMethodNotAllowedRes.getHeader("allow"), "GET, HEAD", "article HTML route should advertise the supported methods on 405 responses");
+assert.equal(postRouteMethodNotAllowedRes.getHeader("allow"), "GET", "article HTML route should advertise the supported methods on 405 responses");
 assert.equal(postRouteMethodNotAllowedRes.getHeader("cache-control"), "no-store", "article HTML route should mark 405 responses as non-cacheable");
+const postRouteHeadRes = createApiResponseRecorder();
+await apiPostHandler({ method: "HEAD", query: { id: "post-1" } }, postRouteHeadRes);
+assert.equal(postRouteHeadRes.statusCode, 405, "article HTML route should reject HEAD without loading Notion content");
+assert.equal(postRouteHeadRes.getHeader("allow"), "GET", "article HTML route should avoid advertising HEAD when it is intentionally unsupported");
 expectIncludes(apiPostsDataJs, "queryPublicPosts", "post list endpoint should serve the public blog set through a semantic API");
 expectIncludes(apiPostsDataJs, '"Cache-Control", "no-store"', "post list endpoint should not cache public responses");
 expectIncludes(apiPostDataJs, "fetchPublicPost", "post data endpoint should only serve posts from the public blog set");
@@ -1791,13 +1959,19 @@ expectIncludes(publicContentJs, "rejectUnsupportedReadMethod", "public content h
 const postsDataMethodNotAllowedRes = createApiResponseRecorder();
 await apiPostsDataHandler({ method: "POST", query: {} }, postsDataMethodNotAllowedRes);
 assert.equal(postsDataMethodNotAllowedRes.statusCode, 405, "post list endpoint should reject unsupported methods with HTTP 405");
-assert.equal(postsDataMethodNotAllowedRes.getHeader("allow"), "GET, HEAD", "post list endpoint should advertise the supported methods on 405 responses");
+assert.equal(postsDataMethodNotAllowedRes.getHeader("allow"), "GET", "post list endpoint should advertise the supported methods on 405 responses");
 assert.equal(postsDataMethodNotAllowedRes.getHeader("cache-control"), "no-store", "post list endpoint should mark 405 responses as non-cacheable");
+const postsDataHeadRes = createApiResponseRecorder();
+await apiPostsDataHandler({ method: "HEAD", query: {} }, postsDataHeadRes);
+assert.equal(postsDataHeadRes.statusCode, 405, "post list endpoint should reject HEAD without querying Notion");
 const postDataMethodNotAllowedRes = createApiResponseRecorder();
 await apiPostDataHandler({ method: "POST", query: {} }, postDataMethodNotAllowedRes);
 assert.equal(postDataMethodNotAllowedRes.statusCode, 405, "post data endpoint should reject unsupported methods with HTTP 405");
-assert.equal(postDataMethodNotAllowedRes.getHeader("allow"), "GET, HEAD", "post data endpoint should advertise the supported methods on 405 responses");
+assert.equal(postDataMethodNotAllowedRes.getHeader("allow"), "GET", "post data endpoint should advertise the supported methods on 405 responses");
 assert.equal(postDataMethodNotAllowedRes.getHeader("cache-control"), "no-store", "post data endpoint should mark 405 responses as non-cacheable");
+const postDataHeadRes = createApiResponseRecorder();
+await apiPostDataHandler({ method: "HEAD", query: { id: "post-1" } }, postDataHeadRes);
+assert.equal(postDataHeadRes.statusCode, 405, "post data endpoint should reject HEAD without loading the post detail tree");
 expectIncludes(publicContentJs, "getPublicPostErrorStatus", "public content helper should centralize post error mapping");
 expectIncludes(publicContentJs, "notion_public_config_error", "public content helper should surface public access misconfiguration as a server error");
 expectIncludes(publicContentJs, "notion_timeout_error", "public content helper should preserve upstream timeout status");
@@ -1888,6 +2062,16 @@ assert.equal(
   JSON.stringify(publicErrorHeaders),
   JSON.stringify([["Retry-After", "30"]]),
   "public content helper should forward Retry-After headers for rate-limited upstream responses",
+);
+const sanitizedPublicError = publicContentHelpers.serializePublicError({
+  code: "notion_config_error",
+  notionCode: "object_not_found",
+  detail: "Could not find database with ID: secret-database-id",
+}, "Post list unavailable");
+assert.equal(
+  Object.prototype.hasOwnProperty.call(sanitizedPublicError, "detail"),
+  false,
+  "public content helper should not expose upstream error details by default",
 );
 expectIncludes(serverNotionJs, "queryPublicPages", "server notion layer should expose a filtered public page query helper");
 expectIncludes(serverNotionJs, "queryPublicPosts", "server notion layer should provide a public post query helper");
@@ -2627,7 +2811,10 @@ expectIncludes(apiSitemapJs, '"Cache-Control", "no-store"', "dynamic sitemap sho
 expectIncludes(vercelJson, '"/posts/:id"', "Vercel should rewrite canonical article routes");
 expectIncludes(vercelJson, '"/sitemap.xml"', "Vercel should serve a dynamic sitemap");
 expectIncludes(vercelJson, '"/favicon.png"', "Vercel should set cache headers for the real favicon asset");
-expectIncludes(vercelJson, "frame-src 'self' https:", "Vercel CSP should allow external iframe embeds for article content");
+expectIncludes(vercelJson, "frame-ancestors 'none'", "Vercel global CSP should preserve clickjacking protection");
+expectIncludes(vercelJson, '"X-Frame-Options"', "Vercel should retain legacy frame-denial protection");
+expectNotIncludes(vercelJson, "script-src-elem 'self' 'unsafe-inline'", "Vercel global CSP should not allow arbitrary inline script elements");
+expectNotIncludes(vercelJson, "default-src 'self'; script-src", "Vercel global CSP should leave script policy to static meta tags and SSR nonce headers");
 expectNotIncludes(vercelJson, '"/api/:path*"', "Vercel should not rewrite semantic API routes through the disabled legacy proxy");
 
 console.log("Smoke check passed.");

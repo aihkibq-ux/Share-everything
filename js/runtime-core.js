@@ -3,13 +3,26 @@
  */
 
 (function initRuntimeCore() {
+  function readStructuredDataNonce() {
+    const nonceScript = document.head?.querySelector(
+      'script[type="application/ld+json"][data-structured-data][nonce], script[nonce]',
+    );
+    return nonceScript?.nonce || nonceScript?.getAttribute("nonce") || "";
+  }
+
   function ensureStructuredDataTag(key) {
     const selector = `script[type="application/ld+json"][data-structured-data="${key}"]`;
     let script = document.head?.querySelector(selector);
     if (!script) {
+      const nonce = readStructuredDataNonce();
+      if (!nonce) {
+        return null;
+      }
+
       script = document.createElement("script");
       script.type = "application/ld+json";
       script.setAttribute("data-structured-data", key);
+      script.setAttribute("nonce", nonce);
       document.head?.appendChild(script);
     }
     return script;
@@ -29,7 +42,10 @@
       return;
     }
 
-    ensureStructuredDataTag(key).textContent = JSON.stringify(payload);
+    const script = ensureStructuredDataTag(key);
+    if (!script) return;
+
+    script.textContent = JSON.stringify(payload);
   }
 
   window.StructuredData = Object.freeze({

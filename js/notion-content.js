@@ -8,7 +8,7 @@
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   const SAFE_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
-  const SAFE_IMAGE_PROTOCOLS = new Set(["http:", "https:"]);
+  const SAFE_IMAGE_PROTOCOLS = new Set(["https:"]);
   const NOTION_ANNOTATION_STYLES = {
     gray: "color: #9b9a97;",
     brown: "color: #937264;",
@@ -269,11 +269,15 @@
     return SUPPORTED_BLOG_CATEGORIES.slice();
   }
 
-  function sanitizeUrl(candidate, allowedProtocols, baseOrigin) {
+  function sanitizeUrl(candidate, allowedProtocols, baseOrigin, { allowSameOrigin = false } = {}) {
     if (!candidate || typeof candidate !== "string") return null;
 
     try {
-      const parsed = new URL(candidate, getBaseOrigin(baseOrigin));
+      const resolvedBaseOrigin = getBaseOrigin(baseOrigin);
+      const parsed = new URL(candidate, resolvedBaseOrigin);
+      if (allowSameOrigin && parsed.origin === new URL(resolvedBaseOrigin).origin) {
+        return parsed.href;
+      }
       return allowedProtocols.has(parsed.protocol) ? parsed.href : null;
     } catch (error) {
       return null;
@@ -281,7 +285,13 @@
   }
 
   function resolveDisplayImageUrl(candidate, baseOrigin) {
-    return sanitizeUrl(candidate, SAFE_IMAGE_PROTOCOLS, baseOrigin);
+    return sanitizeCspResourceUrl(candidate, SAFE_IMAGE_PROTOCOLS, baseOrigin);
+  }
+
+  function sanitizeCspResourceUrl(candidate, allowedProtocols, baseOrigin) {
+    return sanitizeUrl(candidate, allowedProtocols, baseOrigin, {
+      allowSameOrigin: true,
+    });
   }
 
   function getBlockResourceUrl(blockData) {
@@ -551,7 +561,7 @@
   }
 
   function resolveEmbeddableUrl(candidate, baseOrigin) {
-    const safeUrl = sanitizeUrl(candidate, SAFE_IMAGE_PROTOCOLS, baseOrigin);
+    const safeUrl = sanitizeCspResourceUrl(candidate, SAFE_IMAGE_PROTOCOLS, baseOrigin);
     if (!safeUrl) {
       return null;
     }
@@ -693,7 +703,7 @@
   }
 
   function renderEmbedBlock(block, childrenHtml, baseOrigin) {
-    const safeUrl = sanitizeUrl(block.url, SAFE_IMAGE_PROTOCOLS, baseOrigin);
+    const safeUrl = sanitizeCspResourceUrl(block.url, SAFE_IMAGE_PROTOCOLS, baseOrigin);
     if (!safeUrl) {
       return childrenHtml;
     }
@@ -813,7 +823,7 @@
       case "divider":
         return `<hr>${childrenHtml}`;
       case "image": {
-        const safeImageUrl = sanitizeUrl(block.url, SAFE_IMAGE_PROTOCOLS, baseOrigin);
+        const safeImageUrl = resolveDisplayImageUrl(block.url, baseOrigin);
         if (!safeImageUrl) return childrenHtml;
         const captionHtml = renderFigureCaption(block.captionHtml, block.caption, "post-figure-caption");
         return `<figure class="post-figure post-figure-image"><img class="post-figure-media" src="${escapeHtml(safeImageUrl)}" alt="${escapeHtml(block.caption)}" loading="lazy" decoding="async">${captionHtml}</figure>${childrenHtml}`;

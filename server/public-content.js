@@ -21,11 +21,11 @@ function applyPublicErrorHeaders(res, error) {
 }
 
 function rejectUnsupportedReadMethod(req, res) {
-  if (req.method === "GET" || req.method === "HEAD") {
+  if (req.method === "GET") {
     return false;
   }
 
-  res.setHeader("Allow", "GET, HEAD");
+  res.setHeader("Allow", "GET");
   res.setHeader("Cache-Control", "no-store");
   res.status(405).json({ error: "Method not allowed" });
   return true;
@@ -49,6 +49,10 @@ function getNormalizedErrorDetail(error) {
   return readErrorDetail(error).toLowerCase();
 }
 
+function shouldExposePublicErrorDetail() {
+  return process.env.EXPOSE_PUBLIC_ERROR_DETAILS === "true";
+}
+
 function serializePublicError(error, fallbackError) {
   const payload = {
     error: fallbackError,
@@ -63,7 +67,7 @@ function serializePublicError(error, fallbackError) {
     payload.notionCode = error.notionCode;
   }
 
-  if (detail) {
+  if (detail && shouldExposePublicErrorDetail()) {
     payload.detail = detail;
   }
 

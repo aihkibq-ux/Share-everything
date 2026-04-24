@@ -26,7 +26,9 @@
 
     try {
       const parsed = new URL(candidate, window.location.origin);
-      return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : null;
+      return parsed.protocol === "https:" || parsed.origin === window.location.origin
+        ? parsed.href
+        : null;
     } catch (error) {
       return null;
     }
