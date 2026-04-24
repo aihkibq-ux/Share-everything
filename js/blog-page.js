@@ -692,7 +692,7 @@
         `);
       }
       const coverHtml = safeCoverImage
-        ? `<div class="blog-card-cover-placeholder blog-card-cover-img" data-cover-gradient="${esc(safeCoverGradient)}" data-cover-emoji="${safeCoverEmoji}" style="background: ${safeCoverGradient}">
+        ? `<div class="blog-card-cover-placeholder blog-card-cover-img" data-cover-gradient="${esc(safeCoverGradient)}" data-cover-emoji="${safeCoverEmoji}" style="background: ${DEFAULT_COVER_GRADIENT}">
              <span class="blog-card-cover-fallback">${safeCoverEmoji}</span>
              <img src="${esc(safeCoverImage)}" alt="${safeTitle}" width="640" height="360" loading="${coverLoading}" decoding="async" fetchpriority="${coverFetchPriority}">
            </div>`

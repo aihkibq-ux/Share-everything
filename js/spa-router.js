@@ -36,15 +36,15 @@
     typeof siteUtils.rememberBlogReturnUrl === "function"
       ? siteUtils.rememberBlogReturnUrl
       : () => null;
-  const ROUTE_EXIT_TRANSITION = "opacity 0.15s ease, transform 0.15s ease";
-  const ROUTE_ENTER_TRANSITION = "opacity 0.25s ease, transform 0.25s var(--transition-smooth)";
-  const ROUTE_REDUCED_TRANSITION = "opacity 0.12s ease";
-  const ROUTE_EXIT_TRANSFORM = "translateY(-8px)";
-  const ROUTE_ENTER_START_TRANSFORM = "translateY(12px)";
-  const ROUTE_ENTER_END_TRANSFORM = "translateY(0)";
-  const ROUTE_TRANSITION_RESET_MS = 300;
-  const ROUTE_REDUCED_RESET_MS = 160;
-  const ROUTE_EXIT_CUE_MS = 150;
+  const ROUTE_EXIT_TRANSITION = "opacity 0.35s cubic-bezier(0.4, 0, 1, 1), transform 0.35s cubic-bezier(0.4, 0, 1, 1)";
+  const ROUTE_ENTER_TRANSITION = "opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.65s cubic-bezier(0.16, 1, 0.3, 1)";
+  const ROUTE_REDUCED_TRANSITION = "opacity 0.2s ease";
+  const ROUTE_EXIT_TRANSFORM = "translateY(-20px) scale(0.96)";
+  const ROUTE_ENTER_START_TRANSFORM = "translateY(36px) scale(0.97)";
+  const ROUTE_ENTER_END_TRANSFORM = "translateY(0) scale(1)";
+  const ROUTE_TRANSITION_RESET_MS = 750;
+  const ROUTE_REDUCED_RESET_MS = 280;
+  const ROUTE_EXIT_CUE_MS = 200;
   const ROUTE_LOCAL_POST_FALLBACK_MS = 700;
   const ROUTE_STUCK_FALLBACK_MS = 2500;
 

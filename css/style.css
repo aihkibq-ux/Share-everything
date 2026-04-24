@@ -91,15 +91,15 @@ body {
 }
 
 .page-transition-wrapper {
-  animation: pageFadeIn 0.5s var(--transition-smooth) forwards;
+  animation: pageFadeIn 0.7s var(--transition-smooth) forwards;
   min-height: 100vh;
   position: relative;
   z-index: 10;
 }
 
 @keyframes pageFadeIn {
-  from { opacity: 0; transform: translateY(15px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(36px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {

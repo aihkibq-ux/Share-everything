@@ -1,6 +1,6 @@
 # Share Everything Site Architecture
 
-> Version: v2.3
+> Version: v2.4
 > Updated: 2026-04-24
 
 ## 1. Overview
@@ -32,7 +32,19 @@ Notion Database
           -> localStorage bookmarks
 ```
 
-## 2. Version v2.3 Highlights
+## 2. Version v2.4 Highlights
+
+v2.4 refines the SPA route transition animation for a smoother, more cinematic feel, fixes card cover placeholders, and adds a project README.
+
+- SPA route exit uses `ease-in` timing (0.35s) with `translateY(-20px) scale(0.96)` for a visible "sink away" depth effect.
+- SPA route entry uses the spring curve (0.65s) with `translateY(36px) scale(0.97)` for a dramatic "rise into view" motion.
+- Route exit visual cue pause extended from 150ms to 200ms for a clearer page-switching feel.
+- Initial page load CSS animation updated to match SPA transitions: 0.7s duration, 36px travel with `scale(0.97)`.
+- Transition reset timer extended to 750ms to fully complete the longer entry animation.
+- Blog card cover placeholders now use the site-consistent dark gradient instead of Notion-sourced gradients when an image is present, preventing jarring color flashes before images load.
+- Added comprehensive project README with features, architecture, quick-start guide, deployment instructions, and environment variable reference.
+
+### v2.3 Highlights
 
 v2.3 restores the v1.6-style whole-page SPA route motion while keeping the v2.0 navigation, cover image, mobile performance, and local development improvements.
 
@@ -50,7 +62,6 @@ v2.3 restores the v1.6-style whole-page SPA route motion while keeping the v2.0 
 - Route transitions include a stuck-state fallback, with a faster local post fallback, so the page cannot remain transparent or non-clickable if navigation stalls.
 - Reduced-motion users receive a quick fade-only route transition.
 - `npm.cmd run dev` now starts a local API-aware server through `scripts/local-server.mjs`.
-- Package version is now `2.3.0`.
 
 ## 3. Public Routes
 
@@ -272,7 +283,7 @@ When public property variables are empty, the configured Notion database is trea
 - SEO runtime behavior.
 - SPA navigation and page HTML request coalescing.
 - SPA post-template fallback for local `/posts/:id` 404s.
-- v1.6-style SPA route transition cadence.
+- SPA route transition animation parameters and depth effects.
 - Blog cover preloading and mobile reveal behavior.
 - Blog cover click layering.
 - Remote display image proxying.

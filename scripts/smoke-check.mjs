@@ -701,7 +701,7 @@ expectIncludes(packageJson, '"dev": "node scripts/local-server.mjs"', "package s
 expectIncludes(localServerJs, '["/api/image", require("../api/image.js")]', "local dev server should route the image proxy endpoint");
 expectIncludes(spaRouterJs, 'script[src]:not([data-spa-runtime])', "SPA router should skip shared runtime scripts via HTML metadata");
 expectIncludes(spaRouterJs, "waitForRouteExitCue", "SPA router should preserve the v1.6-style route exit cue");
-expectIncludes(spaRouterJs, "ROUTE_EXIT_CUE_MS = 150", "SPA router should keep the v1.6-style 150ms visual route cue");
+expectIncludes(spaRouterJs, "ROUTE_EXIT_CUE_MS = 200", "SPA router should keep a visible route exit pause");
 expectIncludes(spaRouterJs, "ROUTE_LOCAL_POST_FALLBACK_MS", "SPA router should quickly recover local post route stalls");
 expectIncludes(spaRouterJs, "ROUTE_STUCK_FALLBACK_MS", "SPA router should recover if a route transition gets stuck in the exit state");
 expectIncludes(spaRouterJs, "getNavigationFallbackUrl", "SPA router stuck fallback should use local-compatible post URLs");
@@ -711,7 +711,7 @@ expectIncludes(spaRouterJs, "shouldUsePostTemplateFallbackFirst", "SPA router sh
 expectIncludes(spaRouterJs, '"127.0.0.1"', "SPA router local post template preference should cover the bundled local server host");
 expectIncludes(spaRouterJs, 'templateUrl.searchParams.set("id", postId);', "SPA router post fallback should load the static post template with the target id");
 expectIncludes(spaRouterJs, "ROUTE_ENTER_TRANSITION", "SPA router should keep a visible route enter animation after cache hits");
-expectIncludes(spaRouterJs, 'ROUTE_ENTER_START_TRANSFORM = "translateY(12px)"', "SPA router should use the v1.6-style route entry travel");
+expectIncludes(spaRouterJs, 'ROUTE_ENTER_START_TRANSFORM = "translateY(36px) scale(0.97)"', "SPA router should use a dramatic route entry sweep with depth");
 expectIncludes(spaRouterJs, 'element.style.animation = "none"', "SPA router should suppress nested first-load animations during SPA route swaps");
 expectNotIncludes(spaRouterJs, "ROUTE_ENTER_CLASS", "SPA router should keep v1.6-style whole-page route motion instead of layered route classes");
 expectNotIncludes(styleCss, "spa-layer-rise", "style.css should not ship layered route-entry animation when using the v1.6-style transition");
