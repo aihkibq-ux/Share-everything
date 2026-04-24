@@ -1,6 +1,6 @@
 # Share Everything Site Architecture
 
-> Version: v2.0
+> Version: v2.1
 > Updated: 2026-04-24
 
 ## 1. Overview
@@ -32,9 +32,9 @@ Notion Database
           -> localStorage bookmarks
 ```
 
-## 2. Version v2.0 Highlights
+## 2. Version v2.1 Highlights
 
-v2.0 focuses on navigation smoothness, cover image loading, mobile performance, and local development parity.
+v2.1 restores a more layered SPA route motion while keeping the v2.0 navigation, cover image, mobile performance, and local development improvements.
 
 - Blog top actions now switch listing state in-page, avoiding a full reload when moving between bookmarks and overview.
 - Blog cards preload the first visible cover images and mark first-screen covers as `loading="eager"` with `fetchpriority="high"`.
@@ -45,9 +45,11 @@ v2.0 focuses on navigation smoothness, cover image loading, mobile performance, 
 - Mobile particle density was reduced from 80 to 48, and particles pause briefly while scrolling on mobile.
 - SPA page HTML requests are coalesced and no longer pay a fixed 150ms transition delay.
 - SPA article navigation falls back to `/post.html?id=...` when a local server does not support `/posts/:id` rewrites.
-- SPA route transitions use a visible opacity/transform animation without adding a fixed navigation delay.
+- SPA route transitions use a light outer handoff plus layered entry animations for navigation, page title, search/filter controls, article header, and article content.
+- SPA route animation classes are token-cleared so rapid navigation does not leave stale transparent or offset elements behind.
+- Reduced-motion users receive a quick fade-only route transition.
 - `npm.cmd run dev` now starts a local API-aware server through `scripts/local-server.mjs`.
-- Package version is now `2.0.0`.
+- Package version is now `2.1.0`.
 
 ## 3. Public Routes
 
@@ -166,7 +168,7 @@ Page-specific scripts are then loaded as needed:
 | `bookmark.js` | Local bookmark persistence and legacy metadata hydration |
 | `notion-api.js` | Browser-side API requests, summary cache, short list response cache |
 
-`spa-router.js` keeps canonical URLs in the address bar, but can load `/post.html?id=...` as a compatibility fallback when the current local server returns `404` for `/posts/:id`. Route changes animate through opacity and transform only, so the transition remains visible while staying inexpensive for the browser.
+`spa-router.js` keeps canonical URLs in the address bar, but can load `/post.html?id=...` as a compatibility fallback when the current local server returns `404` for `/posts/:id`. Route changes use a light outer opacity/transform handoff plus layered entry animation on page titles, actions, post content, search, and filters, so the transition stays visible without reintroducing a fixed navigation delay.
 
 ## 9. Image Loading Strategy
 
@@ -262,7 +264,7 @@ When public property variables are empty, the configured Notion database is trea
 - SEO runtime behavior.
 - SPA navigation and page HTML request coalescing.
 - SPA post-template fallback for local `/posts/:id` 404s.
-- Visible SPA route transition parameters.
+- Layered SPA route transition choreography.
 - Blog cover preloading and mobile reveal behavior.
 - Blog cover click layering.
 - Remote display image proxying.

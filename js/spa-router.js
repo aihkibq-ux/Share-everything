@@ -36,12 +36,17 @@
     typeof siteUtils.rememberBlogReturnUrl === "function"
       ? siteUtils.rememberBlogReturnUrl
       : () => null;
-  const ROUTE_EXIT_TRANSITION = "opacity 0.2s ease, transform 0.2s var(--transition-smooth)";
-  const ROUTE_ENTER_TRANSITION = "opacity 0.34s ease, transform 0.34s var(--transition-smooth)";
-  const ROUTE_EXIT_TRANSFORM = "translateY(-14px) scale(0.985)";
-  const ROUTE_ENTER_START_TRANSFORM = "translateY(22px) scale(0.985)";
+  const ROUTE_EXIT_TRANSITION = "opacity 0.18s ease, transform 0.18s var(--transition-smooth)";
+  const ROUTE_ENTER_TRANSITION = "opacity 0.28s ease, transform 0.28s var(--transition-smooth)";
+  const ROUTE_REDUCED_TRANSITION = "opacity 0.12s ease";
+  const ROUTE_EXIT_TRANSFORM = "translateY(-8px) scale(0.992)";
+  const ROUTE_ENTER_START_TRANSFORM = "translateY(10px) scale(0.992)";
   const ROUTE_ENTER_END_TRANSFORM = "translateY(0) scale(1)";
-  const ROUTE_TRANSITION_RESET_MS = 380;
+  const ROUTE_TRANSITION_RESET_MS = 340;
+  const ROUTE_REDUCED_RESET_MS = 160;
+  const ROUTE_ENTER_CLASS = "spa-route-entering";
+  const ROUTE_READY_CLASS = "spa-route-ready";
+  const ROUTE_ENTER_CLASS_RESET_MS = 620;
 
   const SPARouter = (() => {
     let navigationToken = 0;
@@ -326,6 +331,10 @@
       });
     }
 
+    function prefersReducedRouteMotion() {
+      return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches || false;
+    }
+
     async function navigate(url, pushState = true) {
       const content = document.getElementById("spa-content");
       if (!content) {
@@ -343,6 +352,7 @@
       const currentPageId = PageRuntime.getPageIdFromUrl(window.location.href);
       const targetPageId = PageRuntime.getPageIdFromUrl(targetRouteKey);
       const currentToken = ++navigationToken;
+      const reduceRouteMotion = prefersReducedRouteMotion();
 
       if (currentPageId === "blog" && targetPageId === "post") {
         rememberBlogReturnUrl(window.location.href);
@@ -353,11 +363,12 @@
 
       PageRuntime.cleanupCurrentPage();
 
+      content.classList.remove(ROUTE_ENTER_CLASS);
       content.style.pointerEvents = "none";
       content.style.willChange = "opacity, transform";
-      content.style.transition = ROUTE_EXIT_TRANSITION;
+      content.style.transition = reduceRouteMotion ? ROUTE_REDUCED_TRANSITION : ROUTE_EXIT_TRANSITION;
       content.style.opacity = "0";
-      content.style.transform = ROUTE_EXIT_TRANSFORM;
+      content.style.transform = reduceRouteMotion ? "none" : ROUTE_EXIT_TRANSFORM;
 
       try {
         const html = await fetchPageHtml(targetRouteKey, {
@@ -427,16 +438,9 @@
 
         content.innerHTML = newContent.innerHTML;
         content.dataset.pendingFocus = targetPageId || "page";
+        content.classList.remove(ROUTE_READY_CLASS);
+        content.classList.add(ROUTE_ENTER_CLASS);
         window.StructuredData?.clear?.("post-article");
-
-        content.querySelectorAll(".page-transition-wrapper").forEach((element) => {
-          element.style.animation = "none";
-        });
-        content.querySelectorAll(".top-actions").forEach((element) => {
-          element.style.animation = "none";
-          element.style.opacity = "1";
-          element.style.transform = "none";
-        });
 
         PageRuntime.initializePage(targetPageId);
 
@@ -450,11 +454,11 @@
         });
 
         content.style.opacity = "0";
-        content.style.transform = ROUTE_ENTER_START_TRANSFORM;
+        content.style.transform = reduceRouteMotion ? "none" : ROUTE_ENTER_START_TRANSFORM;
         void content.offsetHeight;
-        content.style.transition = ROUTE_ENTER_TRANSITION;
+        content.style.transition = reduceRouteMotion ? ROUTE_REDUCED_TRANSITION : ROUTE_ENTER_TRANSITION;
         content.style.opacity = "1";
-        content.style.transform = ROUTE_ENTER_END_TRANSFORM;
+        content.style.transform = reduceRouteMotion ? "none" : ROUTE_ENTER_END_TRANSFORM;
 
         setTimeout(() => {
           if (currentToken !== navigationToken) return;
@@ -463,7 +467,13 @@
           content.style.transform = "";
           content.style.pointerEvents = "";
           content.style.willChange = "";
-        }, ROUTE_TRANSITION_RESET_MS);
+        }, reduceRouteMotion ? ROUTE_REDUCED_RESET_MS : ROUTE_TRANSITION_RESET_MS);
+
+        setTimeout(() => {
+          if (currentToken !== navigationToken) return;
+          content.classList.remove(ROUTE_ENTER_CLASS);
+          content.classList.add(ROUTE_READY_CLASS);
+        }, reduceRouteMotion ? ROUTE_REDUCED_RESET_MS : ROUTE_ENTER_CLASS_RESET_MS);
       } catch (error) {
         if (error?.name === "AbortError" || currentToken !== navigationToken) {
           return;

@@ -706,7 +706,16 @@ expectIncludes(spaRouterJs, "pendingPageFetches", "SPA router should coalesce in
 expectIncludes(spaRouterJs, "buildPostTemplateFallbackUrl", "SPA router should recover post navigation when the local server lacks /posts rewrites");
 expectIncludes(spaRouterJs, 'templateUrl.searchParams.set("id", postId);', "SPA router post fallback should load the static post template with the target id");
 expectIncludes(spaRouterJs, "ROUTE_ENTER_TRANSITION", "SPA router should keep a visible route enter animation after cache hits");
-expectIncludes(spaRouterJs, "translateY(22px) scale(0.985)", "SPA router should make page transitions visually noticeable without delaying navigation");
+expectIncludes(spaRouterJs, "ROUTE_ENTER_CLASS", "SPA router should mark layered route-entry animations");
+expectIncludes(spaRouterJs, "classList.add(ROUTE_ENTER_CLASS)", "SPA router should start layered route-entry animations after swapping content");
+expectIncludes(spaRouterJs, "classList.remove(ROUTE_ENTER_CLASS)", "SPA router should clear layered route-entry animations with token protection");
+expectNotIncludes(spaRouterJs, 'element.style.animation = "none"', "SPA router should not disable page wrapper or top-action entry animations after route swaps");
+expectIncludes(styleCss, "#spa-content.spa-route-entering .page-transition-wrapper", "CSS should expose the layered SPA route-entry wrapper hook");
+expectIncludes(styleCss, "@keyframes spa-layer-rise", "CSS should define the layered route-entry rise animation");
+expectIncludes(blogPageCss, "#spa-content.spa-route-entering .page-title", "blog-page.css should animate blog page-level content during SPA route entry");
+expectIncludes(blogPageCss, "#spa-content.spa-route-entering .blog-search", "blog-page.css should animate search during SPA route entry");
+expectIncludes(postPageCss, "#spa-content.spa-route-entering .post-content", "post-page.css should animate article content during SPA route entry");
+expectIncludes(styleCss, "prefers-reduced-motion: reduce", "CSS should weaken layered route transitions for reduced-motion users");
 expectIncludes(spaRouterJs, "pointerEvents = \"none\"", "SPA router should avoid interactions during route transitions");
 assert.ok(
   !spaRouterJs.includes("SHARED_RUNTIME_SCRIPT_NAMES"),

@@ -100,6 +100,34 @@
   -webkit-user-select: text;
 }
 
+#spa-content.spa-route-entering .post-back,
+#spa-content.spa-route-entering .post-header,
+#spa-content.spa-route-entering .post-content {
+  animation: spa-layer-rise 0.5s var(--transition-smooth) both;
+  will-change: opacity, transform;
+}
+
+#spa-content.spa-route-entering .post-back {
+  animation-delay: 0.02s;
+}
+
+#spa-content.spa-route-entering .post-header {
+  animation-delay: 0.04s;
+}
+
+#spa-content.spa-route-entering .post-content {
+  animation-delay: 0.08s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #spa-content.spa-route-entering .post-back,
+  #spa-content.spa-route-entering .post-header,
+  #spa-content.spa-route-entering .post-content {
+    animation-duration: 0.01ms;
+    animation-delay: 0s;
+  }
+}
+
 .post-content h2,
 .post-content h3,
 .post-content h4 {
