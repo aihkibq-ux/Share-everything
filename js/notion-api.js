@@ -13,6 +13,7 @@ const NotionAPI = (() => {
   const POSTS_REQUEST_KEY_PREFIX = "notion_query_posts";
   const POST_REQUEST_KEY_PREFIX = "notion_page_";
   const POST_SUMMARY_CACHE_TTL = 1000 * 60 * 30;
+  const POSTS_RESPONSE_CACHE_TTL = 1000 * 20;
   const POST_SUMMARY_SESSION_MAX_TITLE_LENGTH = 160;
   const POST_SUMMARY_SESSION_MAX_EXCERPT_LENGTH = 320;
   const POST_SUMMARY_SESSION_MAX_CATEGORY_LENGTH = 48;
@@ -36,6 +37,7 @@ const NotionAPI = (() => {
       ? sharedContent.getRemoteBlogCategories()
       : FALLBACK_REMOTE_BLOG_CATEGORIES;
   const pendingRequests = new Map();
+  const postsResponseCache = new Map();
   const postSummaryMemoryCache = new Map();
   const postSummaryTimestampCache = new Map();
   const fallbackCategoryColor = {
@@ -484,14 +486,69 @@ const NotionAPI = (() => {
     };
   }
 
+  function clonePostSummary(post) {
+    if (!post || typeof post !== "object") return post;
+
+    return {
+      ...post,
+      tags: Array.isArray(post.tags) ? [...post.tags] : [],
+    };
+  }
+
+  function clonePostQueryResult(data) {
+    return {
+      results: Array.isArray(data?.results) ? data.results.map(clonePostSummary) : [],
+      total: Number.isFinite(Number(data?.total)) ? Number(data.total) : 0,
+      totalPages: Math.max(1, Number.isFinite(Number(data?.totalPages)) ? Number(data.totalPages) : 1),
+      currentPage: Math.max(1, Number.isFinite(Number(data?.currentPage)) ? Number(data.currentPage) : 1),
+    };
+  }
+
+  function readCachedPostsResponse(key) {
+    const cached = postsResponseCache.get(key);
+    if (!cached) return null;
+
+    if (Date.now() >= cached.expiresAt) {
+      postsResponseCache.delete(key);
+      return null;
+    }
+
+    postsResponseCache.delete(key);
+    postsResponseCache.set(key, cached);
+    return clonePostQueryResult(cached.data);
+  }
+
+  function cachePostsResponse(key, data) {
+    if (!key || !data) return;
+
+    postsResponseCache.set(key, {
+      data: clonePostQueryResult(data),
+      expiresAt: Date.now() + POSTS_RESPONSE_CACHE_TTL,
+    });
+
+    while (postsResponseCache.size > 12) {
+      const oldestKey = postsResponseCache.keys().next().value;
+      if (!oldestKey) break;
+      postsResponseCache.delete(oldestKey);
+    }
+  }
+
   async function fetchPostsRemote(options) {
-    return withPendingRequest(buildPostsRequestKey(options), async () => {
+    const requestKey = buildPostsRequestKey(options);
+    const cachedResponse = readCachedPostsResponse(requestKey);
+    if (cachedResponse) {
+      primePostSummaries(cachedResponse.results);
+      return cachedResponse;
+    }
+
+    return withPendingRequest(requestKey, async () => {
       const mappedData = normalizePostQueryResult(
         await requestJsonWithTimeout(`${CONFIG.postsEndpoint}${buildPostQueryString(options)}`),
       );
 
       primePostSummaries(mappedData.results);
-      return mappedData;
+      cachePostsResponse(requestKey, mappedData);
+      return clonePostQueryResult(mappedData);
     });
   }
 

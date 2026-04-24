@@ -38,6 +38,14 @@
     return sanitizeImageUrl(candidate);
   }
 
+  function resolveProxiedDisplayImageUrl(candidate) {
+    if (typeof sharedContent.resolveProxiedDisplayImageUrl === "function") {
+      return sharedContent.resolveProxiedDisplayImageUrl(candidate, window.location.origin);
+    }
+
+    return sanitizeImageUrl(candidate);
+  }
+
   function sanitizeCoverBackground(value, fallback = null) {
     if (typeof value !== "string") return fallback;
 
@@ -253,6 +261,7 @@
     parseBookmarkListingHash,
     rememberBlogReturnUrl,
     resolveDisplayImageUrl,
+    resolveProxiedDisplayImageUrl,
     resolveShareImageUrl,
     sanitizeCoverBackground,
     sanitizeImageUrl,

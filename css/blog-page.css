@@ -150,7 +150,7 @@
 .blog-card-link {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 2;
   border-radius: inherit;
 }
 
@@ -194,13 +194,32 @@
 
 .blog-card-cover-img {
   padding: 0;
+  position: relative;
+  overflow: hidden;
+  background-size: cover;
+  background-position: center;
+}
+
+.blog-card-cover-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.72;
+  z-index: 0;
+  pointer-events: none;
 }
 
 .blog-card-cover-img img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .blog-card-body {
@@ -267,7 +286,7 @@
 .card-bookmark-btn {
   margin-left: auto;
   position: relative;
-  z-index: 2;
+  z-index: 3;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -353,6 +372,12 @@
 
 
 @media (max-width: 768px) {
+  .blog-card.visible {
+    transition:
+      opacity 0.3s ease,
+      transform 0.3s var(--transition-smooth);
+  }
+
   .blog-search {
     width: 90%;
     max-width: 504px;

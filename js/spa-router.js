@@ -36,6 +36,12 @@
     typeof siteUtils.rememberBlogReturnUrl === "function"
       ? siteUtils.rememberBlogReturnUrl
       : () => null;
+  const ROUTE_EXIT_TRANSITION = "opacity 0.2s ease, transform 0.2s var(--transition-smooth)";
+  const ROUTE_ENTER_TRANSITION = "opacity 0.34s ease, transform 0.34s var(--transition-smooth)";
+  const ROUTE_EXIT_TRANSFORM = "translateY(-14px) scale(0.985)";
+  const ROUTE_ENTER_START_TRANSFORM = "translateY(22px) scale(0.985)";
+  const ROUTE_ENTER_END_TRANSFORM = "translateY(0) scale(1)";
+  const ROUTE_TRANSITION_RESET_MS = 380;
 
   const SPARouter = (() => {
     let navigationToken = 0;
@@ -46,6 +52,7 @@
     const PAGE_CACHE_TTL_MS = 1000 * 60 * 5;
     const pageCache = new Map();
     const prefetched = new Map();
+    const pendingPageFetches = new Map();
 
     function canWarmResources() {
       return !(connectionInfo?.saveData || /(^|-)2g$/.test(connectionInfo?.effectiveType || ""));
@@ -85,6 +92,44 @@
 
     function isRouteHtmlCacheable(url) {
       return PageRuntime.getPageIdFromUrl(url) !== "post";
+    }
+
+    function buildPostTemplateFallbackUrl(url) {
+      const resolved = resolveUrl(url);
+      const postId = getPostIdFromUrl(resolved.href);
+      if (!postId) return null;
+
+      const templateUrl = new URL("/post.html", resolved.origin);
+      templateUrl.searchParams.set("id", postId);
+      return templateUrl.href;
+    }
+
+    async function requestPageHtml(url, { signal, ignoreSignal = false } = {}) {
+      const response = await fetch(url, {
+        cache: "no-store",
+        signal: ignoreSignal ? undefined : signal,
+      });
+      if (!response.ok) {
+        const error = new Error(`HTTP ${response.status}`);
+        error.status = response.status;
+        error.url = url;
+        throw error;
+      }
+
+      return response.text();
+    }
+
+    async function requestRouteHtml(routeKey, { signal, ignoreSignal = false } = {}) {
+      try {
+        return await requestPageHtml(routeKey, { signal, ignoreSignal });
+      } catch (error) {
+        const fallbackUrl = error?.status === 404
+          ? buildPostTemplateFallbackUrl(routeKey)
+          : null;
+        if (!fallbackUrl) throw error;
+
+        return requestPageHtml(fallbackUrl, { signal, ignoreSignal: false });
+      }
     }
 
     function rememberPageHtml(cacheKey, html) {
@@ -223,17 +268,37 @@
         return cachedHtml;
       }
 
-      const response = await fetch(routeKey, {
-        cache: "no-store",
+      if (canCacheHtml) {
+        const pendingFetch = pendingPageFetches.get(cacheKey);
+        if (pendingFetch) {
+          return pendingFetch;
+        }
+      }
+
+      const loadPageHtml = async () => {
+        const html = await requestRouteHtml(routeKey, {
+          signal,
+          ignoreSignal: canCacheHtml,
+        });
+        if (canCacheHtml) {
+          rememberPageHtml(cacheKey, html);
+        }
+        return html;
+      };
+
+      if (canCacheHtml) {
+        const pendingFetch = loadPageHtml().finally(() => {
+          if (pendingPageFetches.get(cacheKey) === pendingFetch) {
+            pendingPageFetches.delete(cacheKey);
+          }
+        });
+        pendingPageFetches.set(cacheKey, pendingFetch);
+        return pendingFetch;
+      }
+
+      return requestRouteHtml(routeKey, {
         signal,
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const html = await response.text();
-      if (canCacheHtml) {
-        rememberPageHtml(cacheKey, html);
-      }
-      return html;
     }
 
     function warmPage(url) {
@@ -247,6 +312,17 @@
       rememberPrefetchedPage(cacheKey);
       fetchPageHtml(routeKey).catch(() => {
         prefetched.delete(cacheKey);
+      });
+    }
+
+    function waitForPaintOpportunity() {
+      return new Promise((resolve) => {
+        if (typeof window.requestAnimationFrame === "function") {
+          window.requestAnimationFrame(() => resolve());
+          return;
+        }
+
+        setTimeout(resolve, 16);
       });
     }
 
@@ -277,9 +353,11 @@
 
       PageRuntime.cleanupCurrentPage();
 
-      content.style.transition = "opacity 0.15s ease, transform 0.15s ease";
+      content.style.pointerEvents = "none";
+      content.style.willChange = "opacity, transform";
+      content.style.transition = ROUTE_EXIT_TRANSITION;
       content.style.opacity = "0";
-      content.style.transform = "translateY(-8px)";
+      content.style.transform = ROUTE_EXIT_TRANSFORM;
 
       try {
         const html = await fetchPageHtml(targetRouteKey, {
@@ -287,7 +365,7 @@
         });
         if (currentToken !== navigationToken) return;
 
-        await new Promise((resolve) => setTimeout(resolve, 150));
+        await waitForPaintOpportunity();
         if (currentToken !== navigationToken) return;
 
         const doc = new DOMParser().parseFromString(html, "text/html");
@@ -371,17 +449,21 @@
           });
         });
 
-        content.style.transform = "translateY(12px)";
+        content.style.opacity = "0";
+        content.style.transform = ROUTE_ENTER_START_TRANSFORM;
         void content.offsetHeight;
-        content.style.transition = "opacity 0.25s ease, transform 0.25s var(--transition-smooth)";
+        content.style.transition = ROUTE_ENTER_TRANSITION;
         content.style.opacity = "1";
-        content.style.transform = "translateY(0)";
+        content.style.transform = ROUTE_ENTER_END_TRANSFORM;
 
         setTimeout(() => {
+          if (currentToken !== navigationToken) return;
           content.style.transition = "";
           content.style.opacity = "";
           content.style.transform = "";
-        }, 300);
+          content.style.pointerEvents = "";
+          content.style.willChange = "";
+        }, ROUTE_TRANSITION_RESET_MS);
       } catch (error) {
         if (error?.name === "AbortError" || currentToken !== navigationToken) {
           return;

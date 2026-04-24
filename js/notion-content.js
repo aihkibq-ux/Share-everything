@@ -9,6 +9,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   const SAFE_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
   const SAFE_IMAGE_PROTOCOLS = new Set(["https:"]);
+  const IMAGE_PROXY_PATH = "/api/image";
   const NOTION_ANNOTATION_STYLES = {
     gray: "color: #9b9a97;",
     brown: "color: #937264;",
@@ -288,6 +289,33 @@
     return sanitizeCspResourceUrl(candidate, SAFE_IMAGE_PROTOCOLS, baseOrigin);
   }
 
+  function shouldProxyDisplayImageUrl(candidate, baseOrigin) {
+    if (!candidate || typeof candidate !== "string") return false;
+
+    try {
+      const resolvedBaseOrigin = getBaseOrigin(baseOrigin);
+      const parsed = new URL(candidate, resolvedBaseOrigin);
+      return parsed.protocol === "https:" && parsed.origin !== new URL(resolvedBaseOrigin).origin;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function buildImageProxyUrl(candidate, baseOrigin) {
+    const safeImageUrl = resolveDisplayImageUrl(candidate, baseOrigin);
+    if (!safeImageUrl) return null;
+    if (!shouldProxyDisplayImageUrl(safeImageUrl, baseOrigin)) return safeImageUrl;
+
+    const resolvedBaseOrigin = getBaseOrigin(baseOrigin);
+    const proxyUrl = new URL(IMAGE_PROXY_PATH, resolvedBaseOrigin);
+    proxyUrl.searchParams.set("src", safeImageUrl);
+    return proxyUrl.href;
+  }
+
+  function resolveProxiedDisplayImageUrl(candidate, baseOrigin) {
+    return buildImageProxyUrl(candidate, baseOrigin);
+  }
+
   function sanitizeCspResourceUrl(candidate, allowedProtocols, baseOrigin) {
     return sanitizeUrl(candidate, allowedProtocols, baseOrigin, {
       allowSameOrigin: true,
@@ -505,9 +533,13 @@
   function renderBlocks(blocks, options = {}) {
     if (!Array.isArray(blocks) || blocks.length === 0) return "";
 
-    const resolvedOptions = Array.isArray(options.tocHeadings)
-      ? options
-      : { ...options, tocHeadings: collectTableOfContentsHeadings(blocks) };
+    const resolvedOptions = {
+      ...options,
+      imageRenderState: options.imageRenderState || { renderedImageCount: 0 },
+      tocHeadings: Array.isArray(options.tocHeadings)
+        ? options.tocHeadings
+        : collectTableOfContentsHeadings(blocks),
+    };
     let html = "";
     for (let index = 0; index < blocks.length; index += 1) {
       const block = blocks[index];
@@ -535,6 +567,18 @@
 
   function renderListItem(block, options = {}) {
     return `<li>${block.text || ""}${renderBlocks(block.children || [], options)}</li>`;
+  }
+
+  function getPostImageLoadingAttributes(options = {}) {
+    const imageRenderState = options.imageRenderState || { renderedImageCount: 0 };
+    const imageIndex = imageRenderState.renderedImageCount;
+    imageRenderState.renderedImageCount = imageIndex + 1;
+
+    if (imageIndex === 0) {
+      return 'loading="eager" decoding="async" fetchpriority="high"';
+    }
+
+    return 'loading="lazy" decoding="async"';
   }
 
   function getResourceTypeLabel(resourceType) {
@@ -823,10 +867,10 @@
       case "divider":
         return `<hr>${childrenHtml}`;
       case "image": {
-        const safeImageUrl = resolveDisplayImageUrl(block.url, baseOrigin);
+        const safeImageUrl = resolveProxiedDisplayImageUrl(block.url, baseOrigin);
         if (!safeImageUrl) return childrenHtml;
         const captionHtml = renderFigureCaption(block.captionHtml, block.caption, "post-figure-caption");
-        return `<figure class="post-figure post-figure-image"><img class="post-figure-media" src="${escapeHtml(safeImageUrl)}" alt="${escapeHtml(block.caption)}" loading="lazy" decoding="async">${captionHtml}</figure>${childrenHtml}`;
+        return `<figure class="post-figure post-figure-image"><img class="post-figure-media" src="${escapeHtml(safeImageUrl)}" alt="${escapeHtml(block.caption)}" ${getPostImageLoadingAttributes(options)}>${captionHtml}</figure>${childrenHtml}`;
       }
       case "callout": {
         const iconHtml = block.icon
@@ -1048,6 +1092,7 @@
     renderPostArticle,
     renderBlocks,
     resolveDisplayImageUrl,
+    resolveProxiedDisplayImageUrl,
     resolveNotionContentSchema,
     resolveShareImageUrl,
     richTextToHtml,

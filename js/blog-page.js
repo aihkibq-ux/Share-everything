@@ -3,6 +3,7 @@
   const ALL_CATEGORY = SHARED_CONTENT.ALL_CATEGORY || "全部";
   const BOOKMARK_CATEGORY = SHARED_CONTENT.BOOKMARK_CATEGORY || "收藏";
   const DEFAULT_PAGE_SIZE = 9;
+  const EAGER_COVER_IMAGE_COUNT = 3;
   const FALLBACK_BOOKMARK_ONLY_CATEGORIES = Object.freeze([
     { name: BOOKMARK_CATEGORY, emoji: "📚" },
   ]);
@@ -46,6 +47,7 @@
   const HISTORY_MODE_REPLACE = "replace";
   const HISTORY_MODE_PUSH = "push";
   const BOOKMARK_HASH_PREFIX = "#bookmarks";
+  const PRELOAD_COVER_IMAGE_COUNT = 3;
 
   function normalizeBookmarkListingPage(value, fallback = 1) {
     const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -156,6 +158,7 @@
     const emptyEl = document.getElementById("emptyState");
     const paginationEl = document.getElementById("pagination");
     const statusEl = document.getElementById("blogStatus");
+    const topActionsEl = document.getElementById("topActions");
     const escapeText =
       notionApi?.escapeHtml ||
       sharedContent.escapeHtml ||
@@ -184,9 +187,11 @@
     let statusAnnouncementHandle = null;
     let metadataHydrationTask = null;
     let didAttemptHydration = false;
+    let didCompleteInitialRender = false;
     let isDisposed = false;
     let didNormalizeRoute = false;
     let hashChangeHandler = null;
+    const preloadedCoverImages = new Set();
     const supportedCategories = new Set(DEFAULT_SUPPORTED_CATEGORIES);
 
     const params = new URLSearchParams(window.location.search);
@@ -351,6 +356,75 @@
       return currentCategory === BOOKMARK_CATEGORY;
     }
 
+    function normalizeListingPage(value, fallback = 1) {
+      const parsed = Number.parseInt(String(value ?? ""), 10);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+    }
+
+    function isSameBlogListingPath(url) {
+      try {
+        const targetUrl = new URL(url, window.location.href);
+        const currentUrl = new URL(window.location.href);
+        return (
+          targetUrl.origin === currentUrl.origin &&
+          targetUrl.pathname === currentUrl.pathname
+        );
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function readListingStateFromUrl(url) {
+      const targetUrl = new URL(url, window.location.href);
+      const bookmarkState = parseBookmarkListingHash(targetUrl.hash);
+
+      if (bookmarkState.active) {
+        return {
+          category: BOOKMARK_CATEGORY,
+          search: bookmarkState.search,
+          page: bookmarkState.page,
+        };
+      }
+
+      if (targetUrl.hash) {
+        return null;
+      }
+
+      return {
+        category: (targetUrl.searchParams.get("category") || ALL_CATEGORY).trim(),
+        search: (targetUrl.searchParams.get("search") || "").trim(),
+        page: normalizeListingPage(targetUrl.searchParams.get("page"), 1),
+      };
+    }
+
+    function applyListingState({ category, search = "", page = 1 } = {}, historyMode = HISTORY_MODE_PUSH) {
+      const nextCategory = validCategories.has(category) ? category : defaultCategory;
+      const nextSearch = typeof search === "string" ? search.trim() : "";
+      const nextPage = normalizeListingPage(page, 1);
+      const didChange =
+        currentCategory !== nextCategory ||
+        currentSearch !== nextSearch ||
+        currentPage !== nextPage;
+
+      currentCategory = nextCategory;
+      currentSearch = nextSearch;
+      currentPage = nextPage;
+      searchInput.value = currentSearch;
+      syncListingUrl(historyMode);
+
+      if (!didChange) {
+        updatePageUI();
+        renderFilters();
+        return false;
+      }
+
+      updatePageUI();
+      renderFilters();
+      renderPosts();
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return true;
+    }
+
     function scheduleLegacyMetadataHydration() {
       if (!isBookmarkView()) return;
       if (didAttemptHydration) return;
@@ -409,6 +483,34 @@
       `;
     }
 
+    function resolveSafeCoverImage(post) {
+      return typeof siteUtils.resolveProxiedDisplayImageUrl === "function"
+        ? siteUtils.resolveProxiedDisplayImageUrl(post?.coverImage)
+        : typeof siteUtils.resolveDisplayImageUrl === "function"
+          ? siteUtils.resolveDisplayImageUrl(post?.coverImage)
+        : typeof siteUtils.sanitizeImageUrl === "function"
+          ? siteUtils.sanitizeImageUrl(post?.coverImage)
+          : null;
+    }
+
+    function preloadCoverImages(posts = []) {
+      if (!Array.isArray(posts) || posts.length === 0) return;
+
+      posts.slice(0, PRELOAD_COVER_IMAGE_COUNT).forEach((post) => {
+        const coverImage = resolveSafeCoverImage(post);
+        if (!coverImage || preloadedCoverImages.has(coverImage)) return;
+
+        preloadedCoverImages.add(coverImage);
+        const link = document.createElement("link");
+        link.rel = "preload";
+        link.as = "image";
+        link.href = coverImage;
+        link.fetchPriority = "high";
+        link.setAttribute("fetchpriority", "high");
+        document.head?.appendChild(link);
+      });
+    }
+
     function showEmptyState(options = {}) {
       clearCardReveal();
       setGridBusy(false);
@@ -417,6 +519,23 @@
       emptyEl.style.display = "flex";
       paginationEl.innerHTML = "";
       announceStatus(options.announcement || options.title || "没有找到匹配的文章。");
+    }
+
+    function revealRenderedCards() {
+      const shouldAnimateCards = !didCompleteInitialRender;
+      didCompleteInitialRender = true;
+
+      if (!shouldAnimateCards) {
+        gridEl.querySelectorAll(".blog-card").forEach((card) => {
+          card.classList.add("visible");
+        });
+        return;
+      }
+
+      revealFrame = window.requestAnimationFrame(() => {
+        revealFrame = null;
+        cleanupCardReveal = window.initBlogCardReveal?.() || null;
+      });
     }
 
     function updatePageUI() {
@@ -516,7 +635,7 @@
       }
     }
 
-    function renderCard(post) {
+    function renderCard(post, index = 0) {
       const esc = escapeText;
       // Defense-in-depth: catColor values originate from a hardcoded map but are
       // sanitized for consistency with the shared renderPostArticle pipeline.
@@ -531,16 +650,14 @@
         typeof siteUtils.sanitizeCoverBackground === "function"
           ? siteUtils.sanitizeCoverBackground(post.coverGradient, DEFAULT_COVER_GRADIENT)
           : DEFAULT_COVER_GRADIENT;
-      const safeCoverImage =
-        typeof siteUtils.resolveShareImageUrl === "function"
-          ? siteUtils.resolveShareImageUrl(post.coverImage, null)
-          : typeof siteUtils.sanitizeImageUrl === "function"
-            ? siteUtils.sanitizeImageUrl(post.coverImage)
-          : null;
+      const safeCoverImage = resolveSafeCoverImage(post);
       const safePostUrl =
         typeof siteUtils.buildPostPath === "function"
           ? siteUtils.buildPostPath(post.id)
           : `/posts/${encodeURIComponent(post.id)}`;
+      const shouldLoadCoverEagerly = index < EAGER_COVER_IMAGE_COUNT;
+      const coverLoading = shouldLoadCoverEagerly ? "eager" : "lazy";
+      const coverFetchPriority = shouldLoadCoverEagerly ? "high" : "auto";
       const serializedTags = esc(JSON.stringify(Array.isArray(post.tags) ? post.tags : []));
       const bookmarkTitle = bookmarked ? "取消收藏" : "收藏";
       const bookmarkAriaLabel = `${bookmarkTitle}文章：${post.title || "Untitled"}`;
@@ -575,8 +692,9 @@
         `);
       }
       const coverHtml = safeCoverImage
-        ? `<div class="blog-card-cover-placeholder blog-card-cover-img" data-cover-gradient="${esc(safeCoverGradient)}" data-cover-emoji="${safeCoverEmoji}">
-             <img src="${esc(safeCoverImage)}" alt="${safeTitle}" loading="lazy" decoding="async">
+        ? `<div class="blog-card-cover-placeholder blog-card-cover-img" data-cover-gradient="${esc(safeCoverGradient)}" data-cover-emoji="${safeCoverEmoji}" style="background: ${safeCoverGradient}">
+             <span class="blog-card-cover-fallback">${safeCoverEmoji}</span>
+             <img src="${esc(safeCoverImage)}" alt="${safeTitle}" width="640" height="360" loading="${coverLoading}" decoding="async" fetchpriority="${coverFetchPriority}">
            </div>`
         : `<div class="blog-card-cover-placeholder" data-cover-gradient="${esc(safeCoverGradient)}" data-cover-emoji="${safeCoverEmoji}" style="background: ${safeCoverGradient}">
              <span>${safeCoverEmoji}</span>
@@ -669,19 +787,17 @@
 
         if (data.results.length === 0) {
           showEmptyState();
+          didCompleteInitialRender = true;
           return;
         }
 
         emptyEl.style.display = "none";
+        preloadCoverImages(data.results);
         gridEl.innerHTML = data.results.map(renderCard).join("");
         renderPagination(data);
         setGridBusy(false);
         announceStatus(buildResultsAnnouncement(data));
-
-        revealFrame = window.requestAnimationFrame(() => {
-          revealFrame = null;
-          cleanupCardReveal = window.initBlogCardReveal?.() || null;
-        });
+        revealRenderedCards();
       } catch (error) {
         if (currentToken !== renderToken) return;
 
@@ -692,6 +808,7 @@
           actionLabel: "重试",
           announcement: "文章加载失败，请重试。",
         });
+        didCompleteInitialRender = true;
       }
     }
 
@@ -726,7 +843,19 @@
       currentPage = parseInt(button.dataset.page || "1", 10) || 1;
       syncListingUrl(HISTORY_MODE_PUSH);
       renderPosts();
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+
+    function handleTopActionsClick(event) {
+      const link = event.target.closest("a[href]");
+      if (!link || !topActionsEl?.contains(link)) return;
+      if (!isSameBlogListingPath(link.href)) return;
+
+      const nextState = readListingStateFromUrl(link.href);
+      if (!nextState) return;
+
+      event.preventDefault();
+      applyListingState(nextState, HISTORY_MODE_PUSH);
     }
 
     function handleGridClick(event) {
@@ -842,6 +971,7 @@
     gridEl.addEventListener("click", handleGridClick);
     gridEl.addEventListener("error", handleGridMediaError, true);
     emptyEl.addEventListener("click", handleEmptyStateClick);
+    topActionsEl?.addEventListener("click", handleTopActionsClick);
     bindBookmarkHashNavigation();
 
     renderPosts();
@@ -857,6 +987,7 @@
       gridEl.removeEventListener("click", handleGridClick);
       gridEl.removeEventListener("error", handleGridMediaError, true);
       emptyEl.removeEventListener("click", handleEmptyStateClick);
+      topActionsEl?.removeEventListener("click", handleTopActionsClick);
       if (hashChangeHandler) {
         window.removeEventListener("hashchange", hashChangeHandler);
         hashChangeHandler = null;

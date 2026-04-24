@@ -535,6 +535,7 @@ function escapeRegex(value) {
   "js/spa-router.js",
   "js/ui-effects.js",
   "api/notion.js",
+  "api/image.js",
   "api/posts-data.js",
   "api/post-data.js",
   "api/post.js",
@@ -547,11 +548,14 @@ const indexHtml = read("index.html");
 const blogHtml = read("blog.html");
 const postHtml = read("post.html");
 const gitAttributes = read(".gitattributes");
+const packageJson = read("package.json");
 const vercelJson = read("vercel.json");
+const localServerJs = read("scripts/local-server.mjs");
 const styleCss = read("css/style.css");
 const blogPageCss = read("css/blog-page.css");
 const postPageCss = read("css/post-page.css");
 const commonJs = read("js/common.js");
+const blogPageJs = read("js/blog-page.js");
 const runtimeCoreJs = read("js/runtime-core.js");
 const spaRouterJs = read("js/spa-router.js");
 const bookmarkJs = read("js/bookmark.js");
@@ -561,6 +565,7 @@ const notionApiJs = read("js/notion-api.js");
 const postPageJs = read("js/post-page.js");
 const smokeCheckSource = read("scripts/smoke-check.mjs");
 const apiNotionJs = read("api/notion.js");
+const apiImageJs = read("api/image.js");
 const apiPostsDataJs = read("api/posts-data.js");
 const apiPostDataJs = read("api/post-data.js");
 const apiPostJs = read("api/post.js");
@@ -571,6 +576,7 @@ const notionContentHelpers = loadCommonJsModule("js/notion-content.js");
 const publicContentHelpers = loadCommonJsModule("server/public-content.js");
 const securityPolicyHelpers = loadCommonJsModule("server/security-policy.js");
 const apiNotionHandler = loadCommonJsModule("api/notion.js");
+const apiImageHandler = loadCommonJsModule("api/image.js");
 const apiPostHandler = loadCommonJsModule("api/post.js");
 const apiPostsDataHandler = loadCommonJsModule("api/posts-data.js");
 const apiPostDataHandler = loadCommonJsModule("api/post-data.js");
@@ -611,6 +617,9 @@ expectIncludes(postHtml, 'id="postStatus"', "post.html should expose a live stat
 expectIncludes(blogHtml, 'href="/"', "blog.html should point the home action to the canonical root route");
 expectIncludes(postHtml, 'href="/"', "post.html should point the home action to the canonical root route");
 expectIncludes(indexHtml, 'href="/blog.html#bookmarks"', "index.html should keep bookmark navigation on a hash-only route");
+expectIncludes(indexHtml, 'id="ctaHome" href="/blog.html" aria-label="总览"', "index hero overview CTA should expose an accessible name");
+expectIncludes(indexHtml, 'id="ctaStart" href="/blog.html?category=%E7%B2%BE%E9%80%89" aria-label="精选"', "index hero featured CTA should expose an accessible name");
+expectIncludes(indexHtml, 'id="ctaWiki" href="/blog.html#bookmarks" rel="nofollow" aria-label="收藏"', "index hero bookmark CTA should expose an accessible name");
 expectIncludes(blogHtml, 'href="/blog.html#bookmarks"', "blog.html should keep bookmark navigation on a hash-only route");
 expectIncludes(postHtml, 'href="/blog.html#bookmarks"', "post.html should keep bookmark navigation on a hash-only route");
 expectNotIncludes(blogHtml, 'href="/index.html"', "blog.html should avoid the duplicate /index.html home route");
@@ -669,10 +678,36 @@ expectNotIncludes(styleCss, ".fab-bookmark {", "style.css should not ship the fl
 expectIncludes(blogPageCss, ".blog-grid {", "blog-page.css should own the blog grid layout");
 expectIncludes(postPageCss, ".post-content {", "post-page.css should own the post content styles");
 expectIncludes(postPageCss, ".fab-bookmark {", "post-page.css should own the floating bookmark styles");
+expectIncludes(blogPageJs, "EAGER_COVER_IMAGE_COUNT = 3", "blog cards should prioritize the first visible cover images");
+expectIncludes(blogPageJs, "resolveSafeCoverImage(post)", "blog cards should use display-safe cover URLs instead of share-image fallbacks");
+expectIncludes(blogPageJs, 'loading="${coverLoading}"', "blog cards should keep lazy loading off the first visible covers");
+expectIncludes(blogPageJs, 'fetchpriority="${coverFetchPriority}"', "blog cards should assign browser fetch priority to cover images");
+expectIncludes(blogPageJs, "preloadCoverImages(data.results)", "blog cards should preload the first visible cover images after list data arrives");
+expectIncludes(blogPageJs, "blog-card-cover-fallback", "blog cards should show a stable fallback while remote covers load");
+expectIncludes(blogPageCss, ".blog-card-cover-fallback", "blog card cover CSS should keep fallback art visible until the image paints");
+expectIncludes(blogPageCss, "z-index: 2;\n  border-radius: inherit;", "blog card link layer should stay above cover media");
+expectIncludes(blogPageCss, "pointer-events: none;\n}", "blog card cover media should not swallow clicks meant for the card link");
+expectIncludes(blogPageCss, "z-index: 3;\n  display: inline-flex;", "blog card bookmark button should stay above the card link layer");
 expectIncludes(commonJs, "DESKTOP_PARTICLE_COUNT = 350", "particle runtime should preserve the desktop particle density");
-expectIncludes(commonJs, "MOBILE_PARTICLE_COUNT = 80", "particle runtime should use a lighter mobile particle density");
+expectIncludes(commonJs, "MOBILE_PARTICLE_COUNT = 48", "particle runtime should use a lighter mobile particle density");
 expectIncludes(commonJs, "shouldReduceMobileParticles", "particle runtime should gate reduced-motion behavior to mobile particles");
+expectIncludes(commonJs, "pauseMobileParticlesDuringScroll", "particle runtime should pause mobile particles while scrolling");
+expectIncludes(blogPageCss, "opacity 0.3s ease", "blog cards should use shorter reveal transitions on mobile");
+expectIncludes(blogPageJs, 'window.scrollTo({ top: 0, behavior: "auto" });', "blog pagination should avoid smooth-scroll jank on mobile");
+expectIncludes(notionApiJs, "POSTS_RESPONSE_CACHE_TTL", "notion client should keep a short in-memory list cache for fast returns");
+expectIncludes(notionContentJs, "IMAGE_PROXY_PATH", "shared notion content should proxy remote display images through the same-origin image endpoint");
+expectIncludes(apiImageJs, "IMAGE_PROXY_CACHE_CONTROL", "image proxy endpoint should cache successful image responses at the edge");
+expectIncludes(packageJson, '"dev": "node scripts/local-server.mjs"', "package scripts should expose the local API-aware dev server");
+expectIncludes(localServerJs, '["/api/image", require("../api/image.js")]', "local dev server should route the image proxy endpoint");
 expectIncludes(spaRouterJs, 'script[src]:not([data-spa-runtime])', "SPA router should skip shared runtime scripts via HTML metadata");
+expectIncludes(spaRouterJs, "waitForPaintOpportunity", "SPA router should avoid fixed navigation delay floors");
+expectNotIncludes(spaRouterJs, "setTimeout(resolve, 150)", "SPA router should not add an artificial 150ms delay to every page transition");
+expectIncludes(spaRouterJs, "pendingPageFetches", "SPA router should coalesce in-flight page HTML prefetch and navigation requests");
+expectIncludes(spaRouterJs, "buildPostTemplateFallbackUrl", "SPA router should recover post navigation when the local server lacks /posts rewrites");
+expectIncludes(spaRouterJs, 'templateUrl.searchParams.set("id", postId);', "SPA router post fallback should load the static post template with the target id");
+expectIncludes(spaRouterJs, "ROUTE_ENTER_TRANSITION", "SPA router should keep a visible route enter animation after cache hits");
+expectIncludes(spaRouterJs, "translateY(22px) scale(0.985)", "SPA router should make page transitions visually noticeable without delaying navigation");
+expectIncludes(spaRouterJs, "pointerEvents = \"none\"", "SPA router should avoid interactions during route transitions");
 assert.ok(
   !spaRouterJs.includes("SHARED_RUNTIME_SCRIPT_NAMES"),
   "SPA router should not hardcode the shared runtime script list",
@@ -695,6 +730,14 @@ const siteUtilsHarness = loadBrowserScript("js/site-utils.js", {
         return parsed.protocol === "https:" || parsed.origin === new URL(baseOrigin).origin
           ? parsed.href
           : null;
+      },
+      resolveProxiedDisplayImageUrl: (value, baseOrigin) => {
+        if (!value || typeof value !== "string") return null;
+        const parsed = new URL(value, baseOrigin);
+        if (parsed.origin === new URL(baseOrigin).origin) return parsed.href;
+        const proxyUrl = new URL("/api/image", baseOrigin);
+        proxyUrl.searchParams.set("src", parsed.href);
+        return proxyUrl.href;
       },
     },
   },
@@ -735,6 +778,11 @@ assert.equal(
   siteUtilsHarness.window.SiteUtils.sanitizeImageUrl("/cover.png"),
   "https://example.com/cover.png",
   "SiteUtils should keep same-origin image URLs through the shared renderer path",
+);
+assert.equal(
+  siteUtilsHarness.window.SiteUtils.resolveProxiedDisplayImageUrl("https://assets.example.com/cover.png"),
+  "https://example.com/api/image?src=https%3A%2F%2Fassets.example.com%2Fcover.png",
+  "SiteUtils should expose the shared proxied display image resolver",
 );
 const siteUtilsFallbackHarness = loadBrowserScript("js/site-utils.js", {
   window: {
@@ -933,6 +981,29 @@ assert.equal(
   "http://localhost:3000/cover.png",
   "shared notion content helpers should still allow same-origin local image URLs",
 );
+assert.equal(
+  notionContentHelpers.resolveProxiedDisplayImageUrl("/cover.png", "https://example.com"),
+  "https://example.com/cover.png",
+  "shared notion content helpers should keep same-origin display images direct",
+);
+const proxiedDisplayImageUrl = new URL(
+  notionContentHelpers.resolveProxiedDisplayImageUrl("https://assets.example.com/cover.png?token=1", "https://example.com"),
+);
+assert.equal(
+  proxiedDisplayImageUrl.origin,
+  "https://example.com",
+  "shared notion content helpers should keep proxied image URLs same-origin",
+);
+assert.equal(
+  proxiedDisplayImageUrl.pathname,
+  "/api/image",
+  "shared notion content helpers should send remote display images through the image proxy path",
+);
+assert.equal(
+  proxiedDisplayImageUrl.searchParams.get("src"),
+  "https://assets.example.com/cover.png?token=1",
+  "shared notion content helpers should preserve the upstream remote image URL inside the proxy query",
+);
 notionBlockFixtures.forEach(runNotionBlockFixture);
 const renderedArticleHtml = normalizeHtml(notionContentHelpers.renderPostArticle({
   title: "Shared shell",
@@ -963,6 +1034,30 @@ assert.ok(
 assert.ok(
   !minimalArticleHtml.includes('class="post-meta"'),
   "shared notion content module should omit empty metadata rows when a post has no date, read time, or tags",
+);
+const renderedImagePriorityHtml = normalizeHtml(notionContentHelpers.renderBlocks([
+  {
+    type: "image",
+    url: "https://example.com/first.png",
+    caption: "First image",
+  },
+  {
+    type: "image",
+    url: "https://example.com/second.png",
+    caption: "Second image",
+  },
+], {
+  baseOrigin: FIXTURE_BASE_ORIGIN,
+}));
+expectIncludes(
+  renderedImagePriorityHtml,
+  'src="https://example.com/first.png" alt="First image" loading="eager" decoding="async" fetchpriority="high"',
+  "shared notion content module should prioritize the first article image for cover-like first paint",
+);
+expectIncludes(
+  renderedImagePriorityHtml,
+  'src="https://example.com/second.png" alt="Second image" loading="lazy" decoding="async"',
+  "shared notion content module should keep later article images lazy",
 );
 const renderedEmbedHtml = normalizeHtml(notionContentHelpers.renderBlocks([{
   type: "resource",
@@ -1161,6 +1256,7 @@ const blogGridEl = new FakeElement();
 const blogEmptyEl = new FakeElement();
 const blogPaginationEl = new FakeElement();
 const blogStatusEl = new FakeElement();
+const blogTopActionsEl = new FakeElement();
 const blogPageTitleEl = new FakeElement();
 const topActionOverview = {
   classList: createClassList(),
@@ -1232,6 +1328,7 @@ loadBrowserScript("js/blog-page.js", {
         emptyState: blogEmptyEl,
         pagination: blogPaginationEl,
         blogStatus: blogStatusEl,
+        topActions: blogTopActionsEl,
       }[id] || null;
     },
     querySelector(selector) {
@@ -1268,6 +1365,28 @@ assert.equal(
   blogHistory.replaceCalls.at(-1),
   "/blog.html?category=Tech&search=deep+test",
   "blog page should replace the current history entry while live search text changes",
+);
+let didPreventOverviewNav = false;
+blogTopActionsEl.dispatch("click", {
+  target: {
+    href: "https://example.com/blog.html",
+    closest(selector) {
+      return selector === "a[href]" ? this : null;
+    },
+  },
+  preventDefault() {
+    didPreventOverviewNav = true;
+  },
+});
+assert.equal(
+  didPreventOverviewNav,
+  true,
+  "blog page should intercept same-listing top action navigation for smoother in-page transitions",
+);
+assert.equal(
+  blogHistory.pushCalls.at(-1),
+  "/blog.html",
+  "blog page should push overview navigation without falling back to native hash routing",
 );
 blogPageCleanup?.();
 const legacyBookmarkRegisteredPages = new Map();
@@ -1597,11 +1716,11 @@ expectIncludes(notionApiJs, "sharedContent.renderPostArticle", "notion client sh
 expectIncludes(notionApiJs, "POST_SUMMARY_CACHE_TTL", "notion client should keep a separate summary cache for bookmarks");
 expectIncludes(notionApiJs, "window.NotionContent", "notion client should reuse shared notion content helpers");
 assert.ok(
-  !notionApiJs.includes("RESPONSE_CACHE_TTL"),
+  !notionApiJs.includes("const RESPONSE_CACHE_TTL"),
   "notion client should remove zero-effect response cache branches instead of carrying disabled cache code",
 );
 assert.ok(
-  !notionApiJs.includes("RESPONSE_STALE_TTL"),
+  !notionApiJs.includes("const RESPONSE_STALE_TTL"),
   "notion client should remove stale-response cache branches when public content must stay live",
 );
 assert.ok(
@@ -1972,6 +2091,60 @@ assert.equal(postDataMethodNotAllowedRes.getHeader("cache-control"), "no-store",
 const postDataHeadRes = createApiResponseRecorder();
 await apiPostDataHandler({ method: "HEAD", query: { id: "post-1" } }, postDataHeadRes);
 assert.equal(postDataHeadRes.statusCode, 405, "post data endpoint should reject HEAD without loading the post detail tree");
+expectIncludes(apiImageJs, "IMAGE_PROXY_MAX_BYTES", "image proxy endpoint should bound upstream image size");
+expectIncludes(apiImageJs, "isBlockedImageHost", "image proxy endpoint should reject local and private upstream hosts");
+expectIncludes(apiImageJs, "X-Content-Type-Options", "image proxy endpoint should prevent content-type sniffing");
+let imageProxyFetchUrl = "";
+const fakeImageBody = Buffer.from("png");
+const successfulImageProxyHandler = loadCommonJsModule("api/image.js", [], {
+  fetch: async (url) => {
+    imageProxyFetchUrl = String(url);
+    return {
+      ok: true,
+      status: 200,
+      headers: createHeadersMock({
+        "content-type": "image/png",
+        "content-length": String(fakeImageBody.byteLength),
+      }),
+      async arrayBuffer() {
+        return fakeImageBody.buffer.slice(
+          fakeImageBody.byteOffset,
+          fakeImageBody.byteOffset + fakeImageBody.byteLength,
+        );
+      },
+    };
+  },
+});
+const imageProxySuccessRes = createApiResponseRecorder();
+await successfulImageProxyHandler({
+  method: "GET",
+  query: { src: "https://assets.example.com/cover.png" },
+}, imageProxySuccessRes);
+assert.equal(imageProxySuccessRes.statusCode, 200, "image proxy endpoint should return proxied images");
+assert.equal(imageProxyFetchUrl, "https://assets.example.com/cover.png", "image proxy endpoint should fetch the normalized upstream image URL");
+assert.equal(imageProxySuccessRes.getHeader("content-type"), "image/png", "image proxy endpoint should preserve upstream image content type");
+assert.ok(
+  imageProxySuccessRes.getHeader("cache-control")?.includes("s-maxage=604800"),
+  "image proxy endpoint should make successful images edge-cacheable",
+);
+assert.ok(Buffer.isBuffer(imageProxySuccessRes.textBody), "image proxy endpoint should send a binary image buffer");
+let blockedImageProxyFetchCount = 0;
+const blockedImageProxyHandler = loadCommonJsModule("api/image.js", [], {
+  fetch: async () => {
+    blockedImageProxyFetchCount += 1;
+    throw new Error("Blocked image URL should not be fetched");
+  },
+});
+const imageProxyBlockedRes = createApiResponseRecorder();
+await blockedImageProxyHandler({
+  method: "GET",
+  query: { src: "https://127.0.0.1/private.png" },
+}, imageProxyBlockedRes);
+assert.equal(imageProxyBlockedRes.statusCode, 400, "image proxy endpoint should reject private upstream hosts");
+assert.equal(blockedImageProxyFetchCount, 0, "image proxy endpoint should reject private hosts before fetching");
+const imageProxyMethodRes = createApiResponseRecorder();
+await apiImageHandler({ method: "POST", query: { src: "https://assets.example.com/cover.png" } }, imageProxyMethodRes);
+assert.equal(imageProxyMethodRes.statusCode, 405, "image proxy endpoint should reject unsupported methods");
 expectIncludes(publicContentJs, "getPublicPostErrorStatus", "public content helper should centralize post error mapping");
 expectIncludes(publicContentJs, "notion_public_config_error", "public content helper should surface public access misconfiguration as a server error");
 expectIncludes(publicContentJs, "notion_timeout_error", "public content helper should preserve upstream timeout status");
@@ -2811,6 +2984,7 @@ expectIncludes(apiSitemapJs, '"Cache-Control", "no-store"', "dynamic sitemap sho
 expectIncludes(vercelJson, '"/posts/:id"', "Vercel should rewrite canonical article routes");
 expectIncludes(vercelJson, '"/sitemap.xml"', "Vercel should serve a dynamic sitemap");
 expectIncludes(vercelJson, '"/favicon.png"', "Vercel should set cache headers for the real favicon asset");
+expectIncludes(vercelJson, "max-age=3600, stale-while-revalidate=86400", "Vercel should give versioned static scripts and styles a short browser cache");
 expectIncludes(vercelJson, "frame-ancestors 'none'", "Vercel global CSP should preserve clickjacking protection");
 expectIncludes(vercelJson, '"X-Frame-Options"', "Vercel should retain legacy frame-denial protection");
 expectNotIncludes(vercelJson, "script-src-elem 'self' 'unsafe-inline'", "Vercel global CSP should not allow arbitrary inline script elements");

@@ -14,8 +14,9 @@ let mouseY = 0;
 let targetMouseX = 0;
 let targetMouseY = 0;
 const MOBILE_PARTICLE_BREAKPOINT = 768;
-const MOBILE_PARTICLE_COUNT = 80;
+const MOBILE_PARTICLE_COUNT = 48;
 const DESKTOP_PARTICLE_COUNT = 350;
+const MOBILE_SCROLL_PARTICLE_PAUSE_MS = 180;
 const mobileReducedMotionQuery =
   typeof window.matchMedia === "function"
     ? window.matchMedia("(prefers-reduced-motion: reduce)")
@@ -144,6 +145,8 @@ rebuildParticleBuffers();
 let speedMultiplier = 1;
 let targetSpeedMultiplier = 1;
 let particlesBootstrapped = false;
+let particlesPausedForScroll = false;
+let scrollParticleResumeTimer = null;
 
 function drawParticlesFrame(advance = true) {
   if (!ctx || !width || !height) return;
@@ -199,7 +202,7 @@ function clearParticleBootstrapTimer() {
 }
 
 function animateParticles() {
-  if (!ctx) return;
+  if (!ctx || particlesPausedForScroll) return;
   drawParticlesFrame(true);
   rafId = requestAnimationFrame(animateParticles);
 }
@@ -219,7 +222,7 @@ function bootstrapParticles(force = false) {
   }
 
   drawParticlesFrame(false);
-  if (shouldReduceMobileParticles()) {
+  if (shouldReduceMobileParticles() || particlesPausedForScroll) {
     return true;
   }
 
@@ -254,6 +257,28 @@ function setPointerTarget(clientX, clientY) {
   targetMouseY = (clientY - height / 2) * 2;
 }
 
+function clearScrollParticleResumeTimer() {
+  if (scrollParticleResumeTimer) {
+    clearTimeout(scrollParticleResumeTimer);
+    scrollParticleResumeTimer = null;
+  }
+}
+
+function pauseMobileParticlesDuringScroll() {
+  if (!isMobileParticleViewport() || shouldReduceMobileParticles()) return;
+
+  particlesPausedForScroll = true;
+  stopParticles();
+  clearScrollParticleResumeTimer();
+  scrollParticleResumeTimer = setTimeout(() => {
+    scrollParticleResumeTimer = null;
+    particlesPausedForScroll = false;
+    if (!document.hidden) {
+      bootstrapParticles(false);
+    }
+  }, MOBILE_SCROLL_PARTICLE_PAUSE_MS);
+}
+
 window.ParticlesRuntime = Object.freeze({
   setPointerTarget,
 });
@@ -262,6 +287,8 @@ let resizeTimer = null;
 window.addEventListener("resize", () => {
   stopParticles();
   clearParticleBootstrapTimer();
+  clearScrollParticleResumeTimer();
+  particlesPausedForScroll = false;
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     resizeTimer = null;
@@ -328,7 +355,13 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     stopParticles();
     clearParticleBootstrapTimer();
+    clearScrollParticleResumeTimer();
+    particlesPausedForScroll = false;
   } else if (ctx) {
     scheduleParticleBootstrap(!particlesBootstrapped || !rafId);
   }
+});
+
+window.addEventListener("scroll", pauseMobileParticlesDuringScroll, {
+  passive: true,
 });
