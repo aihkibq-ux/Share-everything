@@ -47,30 +47,6 @@
   margin-bottom: 16px;
 }
 
-#spa-content.spa-route-entering .page-title,
-#spa-content.spa-route-entering .blog-search,
-#spa-content.spa-route-entering .blog-filters {
-  animation: spa-layer-rise 0.72s var(--transition-smooth) both;
-  will-change: opacity, transform;
-}
-
-#spa-content.spa-route-entering .blog-search {
-  animation-delay: 0.1s;
-}
-
-#spa-content.spa-route-entering .blog-filters {
-  animation-delay: 0.18s;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  #spa-content.spa-route-entering .page-title,
-  #spa-content.spa-route-entering .blog-search,
-  #spa-content.spa-route-entering .blog-filters {
-    animation-duration: 0.01ms;
-    animation-delay: 0s;
-  }
-}
-
 /* ===== Blog Filters ===== */
 .blog-filters {
   display: flex;

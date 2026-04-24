@@ -1,6 +1,6 @@
 # Share Everything Site Architecture
 
-> Version: v2.2
+> Version: v2.3
 > Updated: 2026-04-24
 
 ## 1. Overview
@@ -32,9 +32,9 @@ Notion Database
           -> localStorage bookmarks
 ```
 
-## 2. Version v2.2 Highlights
+## 2. Version v2.3 Highlights
 
-v2.2 makes SPA route motion more perceptible while keeping the v2.0 navigation, cover image, mobile performance, and local development improvements.
+v2.3 restores the v1.6-style whole-page SPA route motion while keeping the v2.0 navigation, cover image, mobile performance, and local development improvements.
 
 - Blog top actions now switch listing state in-page, avoiding a full reload when moving between bookmarks and overview.
 - Blog cards preload the first visible cover images and mark first-screen covers as `loading="eager"` with `fetchpriority="high"`.
@@ -43,15 +43,14 @@ v2.2 makes SPA route motion more perceptible while keeping the v2.0 navigation, 
 - Article content prioritizes the first image with eager loading and high fetch priority.
 - Remote display images can be routed through the same-origin `/api/image` proxy for better cache behavior.
 - Mobile particle density was reduced from 80 to 48, and particles pause briefly while scrolling on mobile.
-- SPA page HTML requests are coalesced and no longer pay a fixed 150ms transition delay.
-- SPA article navigation falls back to `/post.html?id=...` when a local server does not support `/posts/:id` rewrites.
-- SPA route transitions use a more pronounced outer handoff plus layered entry animations for navigation, page title, search/filter controls, article header, and article content.
-- SPA route animation classes are token-cleared so rapid navigation does not leave stale transparent or offset elements behind.
-- The layered entry class remains active through the full stagger, making the route change perceptible even when cached page HTML returns immediately.
-- Route entry motion now uses wider travel, longer layer timing, and clearer stagger spacing without adding a fixed navigation delay.
+- SPA page HTML requests are coalesced, while route swaps keep the v1.6-style 150ms visual exit cue.
+- SPA article navigation uses `/post.html?id=...` first on local dev origins and falls back to it when another server does not support `/posts/:id` rewrites.
+- SPA route transitions use the v1.6-style whole-page fade/slide cadence: quick fade out, short visual cue, and a 12px page slide in.
+- Nested first-load animations are suppressed during SPA swaps so page titles, top actions, and content do not compete with the whole-page transition.
+- Route transitions include a stuck-state fallback, with a faster local post fallback, so the page cannot remain transparent or non-clickable if navigation stalls.
 - Reduced-motion users receive a quick fade-only route transition.
 - `npm.cmd run dev` now starts a local API-aware server through `scripts/local-server.mjs`.
-- Package version is now `2.2.0`.
+- Package version is now `2.3.0`.
 
 ## 3. Public Routes
 
@@ -170,7 +169,7 @@ Page-specific scripts are then loaded as needed:
 | `bookmark.js` | Local bookmark persistence and legacy metadata hydration |
 | `notion-api.js` | Browser-side API requests, summary cache, short list response cache |
 
-`spa-router.js` keeps canonical URLs in the address bar, but can load `/post.html?id=...` as a compatibility fallback when the current local server returns `404` for `/posts/:id`. Route changes use a light outer opacity/transform handoff plus layered entry animation on page titles, actions, post content, search, and filters, so the transition stays visible without reintroducing a fixed navigation delay.
+`spa-router.js` keeps canonical URLs in the address bar, but can load `/post.html?id=...` as a compatibility fallback when a server returns `404` for `/posts/:id`. On local dev origins such as `127.0.0.1` and `localhost`, it loads that static post template first because the local static server does not rewrite `/posts/:id`. Route changes use the v1.6-style whole-page opacity/transform cadence with a short 150ms visual exit cue, then suppress nested first-load animations after the swap so the transition reads as one calm page movement. If a route remains in its exit state too long, the router falls back to a local-compatible full navigation instead of leaving the page transparent or non-clickable.
 
 ## 9. Image Loading Strategy
 
@@ -255,7 +254,14 @@ Optional:
 
 When public property variables are empty, the configured Notion database is treated as a public-only content database. If draft/private content is later mixed into the same database, configure explicit public filters before publishing.
 
-## 13. Checks
+## 13. Git Naming Rules
+
+- Main release commits use the exact version-only message `vMAJOR.MINOR`, for example `v2.3`.
+- The package version uses matching semver with patch zero, for example `v2.3` maps to `2.3.0`.
+- Keep release commits linear and chronological on `main`; the newest version should sit directly above the previous version.
+- When packaging a release, avoid leaving intermediate `fix:`, `docs:`, or `chore:` commits above the version commit unless the user explicitly asks for split commits.
+
+## 14. Checks
 
 `scripts/smoke-check.mjs` currently covers:
 
@@ -266,7 +272,7 @@ When public property variables are empty, the configured Notion database is trea
 - SEO runtime behavior.
 - SPA navigation and page HTML request coalescing.
 - SPA post-template fallback for local `/posts/:id` 404s.
-- Layered SPA route transition choreography.
+- v1.6-style SPA route transition cadence.
 - Blog cover preloading and mobile reveal behavior.
 - Blog cover click layering.
 - Remote display image proxying.

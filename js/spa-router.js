@@ -36,17 +36,17 @@
     typeof siteUtils.rememberBlogReturnUrl === "function"
       ? siteUtils.rememberBlogReturnUrl
       : () => null;
-  const ROUTE_EXIT_TRANSITION = "opacity 0.22s ease, transform 0.22s var(--transition-smooth)";
-  const ROUTE_ENTER_TRANSITION = "opacity 0.38s ease, transform 0.38s var(--transition-smooth)";
+  const ROUTE_EXIT_TRANSITION = "opacity 0.15s ease, transform 0.15s ease";
+  const ROUTE_ENTER_TRANSITION = "opacity 0.25s ease, transform 0.25s var(--transition-smooth)";
   const ROUTE_REDUCED_TRANSITION = "opacity 0.12s ease";
-  const ROUTE_EXIT_TRANSFORM = "translateY(-10px) scale(0.99)";
-  const ROUTE_ENTER_START_TRANSFORM = "translateY(18px) scale(0.99)";
-  const ROUTE_ENTER_END_TRANSFORM = "translateY(0) scale(1)";
-  const ROUTE_TRANSITION_RESET_MS = 460;
+  const ROUTE_EXIT_TRANSFORM = "translateY(-8px)";
+  const ROUTE_ENTER_START_TRANSFORM = "translateY(12px)";
+  const ROUTE_ENTER_END_TRANSFORM = "translateY(0)";
+  const ROUTE_TRANSITION_RESET_MS = 300;
   const ROUTE_REDUCED_RESET_MS = 160;
-  const ROUTE_ENTER_CLASS = "spa-route-entering";
-  const ROUTE_READY_CLASS = "spa-route-ready";
-  const ROUTE_ENTER_CLASS_RESET_MS = 980;
+  const ROUTE_EXIT_CUE_MS = 150;
+  const ROUTE_LOCAL_POST_FALLBACK_MS = 700;
+  const ROUTE_STUCK_FALLBACK_MS = 2500;
 
   const SPARouter = (() => {
     let navigationToken = 0;
@@ -109,6 +109,13 @@
       return templateUrl.href;
     }
 
+    function shouldUsePostTemplateFallbackFirst(url) {
+      const resolved = resolveUrl(url);
+      if (!buildPostTemplateFallbackUrl(resolved.href)) return false;
+
+      return ["localhost", "127.0.0.1", "::1"].includes(resolved.hostname);
+    }
+
     async function requestPageHtml(url, { signal, ignoreSignal = false } = {}) {
       const response = await fetch(url, {
         cache: "no-store",
@@ -125,13 +132,15 @@
     }
 
     async function requestRouteHtml(routeKey, { signal, ignoreSignal = false } = {}) {
+      const fallbackUrl = buildPostTemplateFallbackUrl(routeKey);
+      if (fallbackUrl && shouldUsePostTemplateFallbackFirst(routeKey)) {
+        return requestPageHtml(fallbackUrl, { signal, ignoreSignal });
+      }
+
       try {
         return await requestPageHtml(routeKey, { signal, ignoreSignal });
       } catch (error) {
-        const fallbackUrl = error?.status === 404
-          ? buildPostTemplateFallbackUrl(routeKey)
-          : null;
-        if (!fallbackUrl) throw error;
+        if (error?.status !== 404 || !fallbackUrl) throw error;
 
         return requestPageHtml(fallbackUrl, { signal, ignoreSignal: false });
       }
@@ -331,8 +340,26 @@
       });
     }
 
+    function waitForRouteExitCue(reduceRouteMotion) {
+      if (reduceRouteMotion) {
+        return waitForPaintOpportunity();
+      }
+
+      return new Promise((resolve) => setTimeout(resolve, ROUTE_EXIT_CUE_MS));
+    }
+
     function prefersReducedRouteMotion() {
       return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches || false;
+    }
+
+    function getNavigationFallbackUrl(routeKey) {
+      return buildPostTemplateFallbackUrl(routeKey) || routeKey;
+    }
+
+    function getRouteStuckFallbackMs(routeKey) {
+      return shouldUsePostTemplateFallbackFirst(routeKey)
+        ? ROUTE_LOCAL_POST_FALLBACK_MS
+        : ROUTE_STUCK_FALLBACK_MS;
     }
 
     async function navigate(url, pushState = true) {
@@ -363,12 +390,23 @@
 
       PageRuntime.cleanupCurrentPage();
 
-      content.classList.remove(ROUTE_ENTER_CLASS);
       content.style.pointerEvents = "none";
       content.style.willChange = "opacity, transform";
       content.style.transition = reduceRouteMotion ? ROUTE_REDUCED_TRANSITION : ROUTE_EXIT_TRANSITION;
       content.style.opacity = "0";
       content.style.transform = reduceRouteMotion ? "none" : ROUTE_EXIT_TRANSFORM;
+      const stuckFallbackTimer = setTimeout(() => {
+        if (
+          currentToken !== navigationToken ||
+          content.style.pointerEvents !== "none" ||
+          content.style.opacity !== "0"
+        ) {
+          return;
+        }
+
+        activeNavigationController?.abort();
+        window.location.href = getNavigationFallbackUrl(targetRouteKey);
+      }, getRouteStuckFallbackMs(targetRouteKey));
 
       try {
         const html = await fetchPageHtml(targetRouteKey, {
@@ -376,13 +414,13 @@
         });
         if (currentToken !== navigationToken) return;
 
-        await waitForPaintOpportunity();
+        await waitForRouteExitCue(reduceRouteMotion);
         if (currentToken !== navigationToken) return;
 
         const doc = new DOMParser().parseFromString(html, "text/html");
         const newContent = doc.getElementById("spa-content");
         if (!newContent) {
-          window.location.href = targetRouteKey;
+          window.location.href = getNavigationFallbackUrl(targetRouteKey);
           return;
         }
 
@@ -438,9 +476,16 @@
 
         content.innerHTML = newContent.innerHTML;
         content.dataset.pendingFocus = targetPageId || "page";
-        content.classList.remove(ROUTE_READY_CLASS);
-        content.classList.add(ROUTE_ENTER_CLASS);
         window.StructuredData?.clear?.("post-article");
+
+        content.querySelectorAll(".page-transition-wrapper").forEach((element) => {
+          element.style.animation = "none";
+        });
+        content.querySelectorAll(".top-actions").forEach((element) => {
+          element.style.animation = "none";
+          element.style.opacity = "1";
+          element.style.transform = "none";
+        });
 
         PageRuntime.initializePage(targetPageId);
 
@@ -459,6 +504,7 @@
         content.style.transition = reduceRouteMotion ? ROUTE_REDUCED_TRANSITION : ROUTE_ENTER_TRANSITION;
         content.style.opacity = "1";
         content.style.transform = reduceRouteMotion ? "none" : ROUTE_ENTER_END_TRANSFORM;
+        clearTimeout(stuckFallbackTimer);
 
         setTimeout(() => {
           if (currentToken !== navigationToken) return;
@@ -468,24 +514,20 @@
           content.style.pointerEvents = "";
           content.style.willChange = "";
         }, reduceRouteMotion ? ROUTE_REDUCED_RESET_MS : ROUTE_TRANSITION_RESET_MS);
-
-        setTimeout(() => {
-          if (currentToken !== navigationToken) return;
-          content.classList.remove(ROUTE_ENTER_CLASS);
-          content.classList.add(ROUTE_READY_CLASS);
-        }, reduceRouteMotion ? ROUTE_REDUCED_RESET_MS : ROUTE_ENTER_CLASS_RESET_MS);
       } catch (error) {
         if (error?.name === "AbortError" || currentToken !== navigationToken) {
           return;
         }
+        clearTimeout(stuckFallbackTimer);
         console.error("SPA navigation failed, falling back:", error);
-        window.location.href = targetRouteKey;
+        window.location.href = getNavigationFallbackUrl(targetRouteKey);
         return;
       } finally {
         if (currentToken === navigationToken) {
           activeNavigationController = null;
           PageProgress.finish();
         }
+        clearTimeout(stuckFallbackTimer);
       }
     }
 
