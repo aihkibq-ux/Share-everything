@@ -36,17 +36,17 @@
     typeof siteUtils.rememberBlogReturnUrl === "function"
       ? siteUtils.rememberBlogReturnUrl
       : () => null;
-  const ROUTE_EXIT_TRANSITION = "opacity 0.18s ease, transform 0.18s var(--transition-smooth)";
-  const ROUTE_ENTER_TRANSITION = "opacity 0.28s ease, transform 0.28s var(--transition-smooth)";
+  const ROUTE_EXIT_TRANSITION = "opacity 0.22s ease, transform 0.22s var(--transition-smooth)";
+  const ROUTE_ENTER_TRANSITION = "opacity 0.38s ease, transform 0.38s var(--transition-smooth)";
   const ROUTE_REDUCED_TRANSITION = "opacity 0.12s ease";
-  const ROUTE_EXIT_TRANSFORM = "translateY(-8px) scale(0.992)";
-  const ROUTE_ENTER_START_TRANSFORM = "translateY(10px) scale(0.992)";
+  const ROUTE_EXIT_TRANSFORM = "translateY(-10px) scale(0.99)";
+  const ROUTE_ENTER_START_TRANSFORM = "translateY(18px) scale(0.99)";
   const ROUTE_ENTER_END_TRANSFORM = "translateY(0) scale(1)";
-  const ROUTE_TRANSITION_RESET_MS = 340;
+  const ROUTE_TRANSITION_RESET_MS = 460;
   const ROUTE_REDUCED_RESET_MS = 160;
   const ROUTE_ENTER_CLASS = "spa-route-entering";
   const ROUTE_READY_CLASS = "spa-route-ready";
-  const ROUTE_ENTER_CLASS_RESET_MS = 620;
+  const ROUTE_ENTER_CLASS_RESET_MS = 980;
 
   const SPARouter = (() => {
     let navigationToken = 0;

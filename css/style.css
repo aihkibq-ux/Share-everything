@@ -97,23 +97,23 @@ body {
 }
 
 #spa-content:not(.spa-route-ready) .page-transition-wrapper {
-  animation: pageFadeIn 0.5s var(--transition-smooth) forwards;
+  animation: pageFadeIn 0.64s var(--transition-smooth) forwards;
 }
 
 @keyframes pageFadeIn {
-  from { opacity: 0; transform: translateY(15px); }
+  from { opacity: 0; transform: translateY(24px) scale(0.99); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes spa-layer-rise {
   0% {
     opacity: 0;
-    transform: translate3d(0, 22px, 0) scale(0.992);
+    transform: translate3d(0, 34px, 0) scale(0.982);
   }
 
-  70% {
+  68% {
     opacity: 1;
-    transform: translate3d(0, -2px, 0) scale(1.002);
+    transform: translate3d(0, -5px, 0) scale(1.006);
   }
 
   100% {
@@ -123,13 +123,13 @@ body {
 }
 
 #spa-content.spa-route-entering .page-transition-wrapper {
-  animation: pageFadeIn 0.5s var(--transition-smooth) both;
+  animation: pageFadeIn 0.68s var(--transition-smooth) both;
 }
 
 #spa-content.spa-route-entering:not(.spa-route-ready) .top-actions {
   opacity: 0;
-  transform: translateY(-16px);
-  animation: nav-slide-in 0.48s var(--transition-smooth) 0.06s both;
+  transform: translateY(-24px);
+  animation: nav-slide-in 0.62s var(--transition-smooth) 0.1s both;
 }
 
 @media (prefers-reduced-motion: reduce) {

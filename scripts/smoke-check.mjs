@@ -707,14 +707,18 @@ expectIncludes(spaRouterJs, "buildPostTemplateFallbackUrl", "SPA router should r
 expectIncludes(spaRouterJs, 'templateUrl.searchParams.set("id", postId);', "SPA router post fallback should load the static post template with the target id");
 expectIncludes(spaRouterJs, "ROUTE_ENTER_TRANSITION", "SPA router should keep a visible route enter animation after cache hits");
 expectIncludes(spaRouterJs, "ROUTE_ENTER_CLASS", "SPA router should mark layered route-entry animations");
+expectIncludes(spaRouterJs, 'ROUTE_ENTER_START_TRANSFORM = "translateY(18px) scale(0.99)"', "SPA router should keep route entry visually noticeable without fixed delay");
+expectIncludes(spaRouterJs, "ROUTE_ENTER_CLASS_RESET_MS = 980", "SPA router should keep the layered entry class long enough for staggered content motion");
 expectIncludes(spaRouterJs, "classList.add(ROUTE_ENTER_CLASS)", "SPA router should start layered route-entry animations after swapping content");
 expectIncludes(spaRouterJs, "classList.remove(ROUTE_ENTER_CLASS)", "SPA router should clear layered route-entry animations with token protection");
 expectNotIncludes(spaRouterJs, 'element.style.animation = "none"', "SPA router should not disable page wrapper or top-action entry animations after route swaps");
 expectIncludes(styleCss, "#spa-content.spa-route-entering .page-transition-wrapper", "CSS should expose the layered SPA route-entry wrapper hook");
 expectIncludes(styleCss, "@keyframes spa-layer-rise", "CSS should define the layered route-entry rise animation");
+expectIncludes(styleCss, "translate3d(0, 34px, 0)", "CSS should give layered route entry enough travel to be visible");
 expectIncludes(blogPageCss, "#spa-content.spa-route-entering .page-title", "blog-page.css should animate blog page-level content during SPA route entry");
 expectIncludes(blogPageCss, "#spa-content.spa-route-entering .blog-search", "blog-page.css should animate search during SPA route entry");
 expectIncludes(postPageCss, "#spa-content.spa-route-entering .post-content", "post-page.css should animate article content during SPA route entry");
+expectIncludes(postPageCss, "animation-delay: 0.22s", "post-page.css should stagger article content visibly during SPA route entry");
 expectIncludes(styleCss, "prefers-reduced-motion: reduce", "CSS should weaken layered route transitions for reduced-motion users");
 expectIncludes(spaRouterJs, "pointerEvents = \"none\"", "SPA router should avoid interactions during route transitions");
 assert.ok(

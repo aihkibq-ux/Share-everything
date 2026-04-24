@@ -50,16 +50,16 @@
 #spa-content.spa-route-entering .page-title,
 #spa-content.spa-route-entering .blog-search,
 #spa-content.spa-route-entering .blog-filters {
-  animation: spa-layer-rise 0.5s var(--transition-smooth) both;
+  animation: spa-layer-rise 0.72s var(--transition-smooth) both;
   will-change: opacity, transform;
 }
 
 #spa-content.spa-route-entering .blog-search {
-  animation-delay: 0.04s;
+  animation-delay: 0.1s;
 }
 
 #spa-content.spa-route-entering .blog-filters {
-  animation-delay: 0.08s;
+  animation-delay: 0.18s;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,6 +1,6 @@
 # Share Everything Site Architecture
 
-> Version: v2.1
+> Version: v2.2
 > Updated: 2026-04-24
 
 ## 1. Overview
@@ -32,9 +32,9 @@ Notion Database
           -> localStorage bookmarks
 ```
 
-## 2. Version v2.1 Highlights
+## 2. Version v2.2 Highlights
 
-v2.1 restores a more layered SPA route motion while keeping the v2.0 navigation, cover image, mobile performance, and local development improvements.
+v2.2 makes SPA route motion more perceptible while keeping the v2.0 navigation, cover image, mobile performance, and local development improvements.
 
 - Blog top actions now switch listing state in-page, avoiding a full reload when moving between bookmarks and overview.
 - Blog cards preload the first visible cover images and mark first-screen covers as `loading="eager"` with `fetchpriority="high"`.
@@ -45,11 +45,13 @@ v2.1 restores a more layered SPA route motion while keeping the v2.0 navigation,
 - Mobile particle density was reduced from 80 to 48, and particles pause briefly while scrolling on mobile.
 - SPA page HTML requests are coalesced and no longer pay a fixed 150ms transition delay.
 - SPA article navigation falls back to `/post.html?id=...` when a local server does not support `/posts/:id` rewrites.
-- SPA route transitions use a light outer handoff plus layered entry animations for navigation, page title, search/filter controls, article header, and article content.
+- SPA route transitions use a more pronounced outer handoff plus layered entry animations for navigation, page title, search/filter controls, article header, and article content.
 - SPA route animation classes are token-cleared so rapid navigation does not leave stale transparent or offset elements behind.
+- The layered entry class remains active through the full stagger, making the route change perceptible even when cached page HTML returns immediately.
+- Route entry motion now uses wider travel, longer layer timing, and clearer stagger spacing without adding a fixed navigation delay.
 - Reduced-motion users receive a quick fade-only route transition.
 - `npm.cmd run dev` now starts a local API-aware server through `scripts/local-server.mjs`.
-- Package version is now `2.1.0`.
+- Package version is now `2.2.0`.
 
 ## 3. Public Routes
 
