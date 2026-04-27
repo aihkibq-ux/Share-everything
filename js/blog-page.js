@@ -31,6 +31,7 @@
     border: "rgba(0, 229, 255, 0.2)",
   });
   const DEFAULT_COVER_GRADIENT = SHARED_CONTENT.DEFAULT_COVER_GRADIENT || "linear-gradient(135deg, #1a1a2e, #16213e)";
+  // @canonical-source: notion-content.js → sanitizeCssColorValue
   const sanitizeCssColor = typeof SHARED_CONTENT.sanitizeCssColorValue === "function"
     ? SHARED_CONTENT.sanitizeCssColorValue
     : (value, fallback = "") => {
@@ -40,9 +41,11 @@
       if (/^(rgba?|hsla?)\([0-9,.\s%]+\)$/i.test(trimmed)) return trimmed;
       return fallback;
     };
+  // @canonical-source: notion-content.js → normalizeSearchText
   const normalizeBookmarkSearchQuery = typeof SHARED_CONTENT.normalizeSearchText === "function"
     ? SHARED_CONTENT.normalizeSearchText
     : (value) => String(value ?? "").toLowerCase().trim().replace(/\s+/g, " ");
+  // @canonical-source: notion-content.js → buildPostSearchText
   const buildSharedPostSearchText = typeof SHARED_CONTENT.buildPostSearchText === "function"
     ? SHARED_CONTENT.buildPostSearchText
     : (post) => [
@@ -88,6 +91,7 @@
     const notionApi = window.NotionAPI;
     const sharedContent = SHARED_CONTENT;
     const siteUtils = window.SiteUtils || {};
+    // @canonical-source: site-utils.js → parseBookmarkListingHash
     const parseBookmarkListingHash = siteUtils.parseBookmarkListingHash
       || ((hash) => {
         const rawHash = typeof hash === "string" ? hash.trim() : "";
@@ -102,6 +106,7 @@
         const normalizedHash = `#bookmarks${qs.toString() ? `?${qs}` : ""}`;
         return { active: true, search, page, normalizedHash };
       });
+    // @canonical-source: site-utils.js → buildBookmarkListingUrl
     const buildBookmarkListingUrl = siteUtils.buildBookmarkListingUrl
       || (({ pathname = "/blog.html", search = "", page = 1 } = {}) => {
         const qs = new URLSearchParams();
@@ -127,6 +132,7 @@
     const paginationEl = document.getElementById("pagination");
     const statusEl = document.getElementById("blogStatus");
     const topActionsEl = document.getElementById("topActions");
+    // @canonical-source: notion-content.js → escapeHtml
     const escapeText =
       notionApi?.escapeHtml ||
       sharedContent.escapeHtml ||

@@ -553,6 +553,9 @@
       const currentUrl = resolveUrl(window.location.href);
       if (nextUrl.origin !== currentUrl.origin) return;
       if (nextUrl.pathname === currentUrl.pathname && nextUrl.search === currentUrl.search) {
+        // Same page, same query — only hash differs (or is identical).
+        // Let the browser handle same-page hash changes natively; page-level
+        // listeners (e.g. hashchange in blog-page.js) will react accordingly.
         if (nextUrl.hash !== currentUrl.hash) return;
         if (nextUrl.hash) return;
       }

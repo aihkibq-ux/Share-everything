@@ -1,6 +1,7 @@
 /**
  * Shared particle runtime used across pages.
  */
+(() => {
 
 const canvas = document.getElementById("particles-canvas");
 const ctx = canvas ? canvas.getContext("2d") : null;
@@ -365,3 +366,4 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("scroll", pauseMobileParticlesDuringScroll, {
   passive: true,
 });
+})();

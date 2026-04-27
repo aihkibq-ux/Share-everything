@@ -55,6 +55,19 @@ const DEFAULT_PUBLIC_STATUS_GROUP_NAMES = [
   "公开",
   "已发布",
 ];
+const DEFAULT_PUBLIC_PROPERTY_CANDIDATES = Object.freeze([
+  "Public",
+  "Published",
+  "Status",
+  "Visibility",
+  "公开",
+  "发布",
+  "发布状态",
+  "状态",
+  "可见",
+  "是否公开",
+]);
+const SUPPORTED_PUBLIC_PROPERTY_TYPES = new Set(["checkbox", "status", "select"]);
 const ALL_CATEGORY = "\u5168\u90e8";
 const CONTENT_PROPERTY_ENV_NAMES = Object.freeze({
   title: ["NOTION_TITLE_PROPERTY_NAMES", "NOTION_TITLE_PROPERTY_NAME"],
@@ -401,6 +414,10 @@ function getPropertySchemaOptions(entry) {
   return [];
 }
 
+function isSupportedPublicVisibilityProperty(entry) {
+  return SUPPORTED_PUBLIC_PROPERTY_TYPES.has(entry?.type);
+}
+
 function getPropertySchemaOptionNames(entry) {
   const seen = new Set();
 
@@ -624,21 +641,30 @@ function buildDatabaseWidePublicAccessPolicy() {
   };
 }
 
+function shouldAllowDatabaseWidePublicAccess() {
+  return process.env.NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS === "true";
+}
+
 function buildPublicAccessPolicyFromDatabase(database) {
   const explicitPropertyCandidates = readCsvEnv(
     ["NOTION_PUBLIC_PROPERTY_NAMES", "NOTION_PUBLIC_PROPERTY_NAME"],
     [],
   );
 
-  if (explicitPropertyCandidates.length === 0) {
+  if (explicitPropertyCandidates.length === 0 && shouldAllowDatabaseWidePublicAccess()) {
     return buildDatabaseWidePublicAccessPolicy();
   }
 
-  const propertyCandidates = explicitPropertyCandidates;
-  const propertyMatches = findPropertyEntriesByCandidates(
+  const propertyCandidates = explicitPropertyCandidates.length > 0
+    ? explicitPropertyCandidates
+    : DEFAULT_PUBLIC_PROPERTY_CANDIDATES;
+  const allPropertyMatches = findPropertyEntriesByCandidates(
     database?.properties,
     propertyCandidates,
   );
+  const propertyMatches = explicitPropertyCandidates.length > 0
+    ? allPropertyMatches
+    : allPropertyMatches.filter(({ entry }) => isSupportedPublicVisibilityProperty(entry));
 
   if (propertyMatches.length > 1) {
     const matchSummary = propertyMatches
@@ -654,9 +680,17 @@ function buildPublicAccessPolicyFromDatabase(database) {
   let propertyEntry = propertyMatches[0]?.entry || null;
 
   if (!propertyEntry?.name || !propertyEntry?.type) {
+    const setupDetail = explicitPropertyCandidates.length > 0
+      ? `Set NOTION_PUBLIC_PROPERTY_NAME(S) to one of: ${propertyCandidates.join(", ")}`
+      : (
+        `Add a checkbox/status/select property named one of: ${propertyCandidates.join(", ")}, ` +
+        "set NOTION_PUBLIC_PROPERTY_NAME(S), or explicitly set " +
+        "NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS=true for a database that contains only public content."
+      );
+
     throw createPublicAccessConfigError(
       "Notion public visibility property is not configured",
-      `Set NOTION_PUBLIC_PROPERTY_NAME(S) to one of: ${propertyCandidates.join(", ")}`,
+      setupDetail,
     );
   }
 
@@ -1117,6 +1151,40 @@ function buildArticleStructuredData(post) {
     defaultShareImageUrl: `${siteOrigin}/favicon.png?v=2`,
     baseOrigin: siteOrigin,
   });
+}
+
+// ── Active cache cleanup ────────────────────────────────────────────────────
+// Periodically sweep expired entries so they don't accumulate in memory in
+// long-running environments (VPS / Docker). In Vercel Serverless the timer is
+// harmless — function instances are recycled independently.
+const CACHE_SWEEP_INTERVAL_MS = 300_000; // 5 minutes
+
+function sweepExpiredCacheEntries() {
+  const now = Date.now();
+
+  for (const [key, entry] of publicPostCache) {
+    if (now >= entry.expiresAt) publicPostCache.delete(key);
+  }
+
+  for (const [key, entry] of publicPageQueryCache) {
+    if (now >= entry.expiresAt) publicPageQueryCache.delete(key);
+  }
+
+  if (databaseMetadataCache && now >= databaseMetadataCache.expiresAt) {
+    databaseMetadataCache = null;
+  }
+
+  if (publicPageSummaryCache && now >= publicPageSummaryCache.expiresAt) {
+    publicPageSummaryCache = null;
+    publicPageQueryCache.clear();
+  }
+}
+
+if (typeof setInterval === "function") {
+  const cacheSweepTimer = setInterval(sweepExpiredCacheEntries, CACHE_SWEEP_INTERVAL_MS);
+  if (typeof cacheSweepTimer.unref === "function") {
+    cacheSweepTimer.unref();
+  }
 }
 
 module.exports = {

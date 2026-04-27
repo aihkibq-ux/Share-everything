@@ -19,9 +19,11 @@ function escapeXml(value) {
     .replace(/'/g, "&apos;");
 }
 
-function formatUrlEntry(loc, lastmod) {
+function formatUrlEntry(loc, { lastmod, changefreq, priority } = {}) {
   const lastmodTag = lastmod ? `\n    <lastmod>${escapeXml(lastmod)}</lastmod>` : "";
-  return `  <url>\n    <loc>${escapeXml(loc)}</loc>${lastmodTag}\n  </url>`;
+  const changefreqTag = changefreq ? `\n    <changefreq>${escapeXml(changefreq)}</changefreq>` : "";
+  const priorityTag = priority != null ? `\n    <priority>${escapeXml(String(priority))}</priority>` : "";
+  return `  <url>\n    <loc>${escapeXml(loc)}</loc>${lastmodTag}${changefreqTag}${priorityTag}\n  </url>`;
 }
 
 module.exports = async function handler(req, res) {
@@ -33,9 +35,13 @@ module.exports = async function handler(req, res) {
     const siteOrigin = getSiteOrigin();
     const posts = await queryPublicPages();
     const entries = [
-      formatUrlEntry(`${siteOrigin}/`),
-      formatUrlEntry(`${siteOrigin}/blog.html`),
-      ...posts.map((post) => formatUrlEntry(buildPostUrl(post.id), post.date || undefined)),
+      formatUrlEntry(`${siteOrigin}/`, { changefreq: "daily", priority: 1.0 }),
+      formatUrlEntry(`${siteOrigin}/blog.html`, { changefreq: "daily", priority: 0.9 }),
+      ...posts.map((post) => formatUrlEntry(buildPostUrl(post.id), {
+        lastmod: post.date || undefined,
+        changefreq: "weekly",
+        priority: 0.7,
+      })),
     ];
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries.join("\n")}\n</urlset>\n`;

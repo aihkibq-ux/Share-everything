@@ -52,9 +52,9 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   margin-bottom: 20px;
-  background: rgba(0, 229, 255, 0.1);
+  background: var(--accent-cyan-bg);
   color: var(--accent-cyan);
-  border: 1px solid rgba(0, 229, 255, 0.2);
+  border: 1px solid var(--accent-cyan-border);
 }
 
 .post-title {
@@ -131,7 +131,7 @@
 .post-content a {
   color: var(--accent-cyan);
   text-decoration: none;
-  border-bottom: 1px solid rgba(0, 229, 255, 0.3);
+  border-bottom: 1px solid var(--accent-cyan-border);
   transition: border-color 0.3s ease;
 }
 
@@ -175,7 +175,7 @@
 .post-content code {
   padding: 2px 8px;
   border-radius: 6px;
-  background: rgba(0, 229, 255, 0.1);
+  background: var(--accent-cyan-bg);
   color: var(--accent-cyan);
   font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 0.88em;
@@ -292,20 +292,20 @@
 
 /* Bookmarked state */
 .fab-bookmark.bookmarked {
-  border-color: rgba(255, 171, 0, 0.3);
-  background: rgba(255, 171, 0, 0.1);
-  color: #ffab00;
+  border-color: var(--accent-bookmark-border);
+  background: var(--accent-bookmark-bg);
+  color: var(--accent-bookmark);
 }
 
 .fab-bookmark.bookmarked .fab-bookmark-icon {
-  fill: #ffab00;
-  stroke: #ffab00;
+  fill: var(--accent-bookmark);
+  stroke: var(--accent-bookmark);
 }
 
 .fab-bookmark.bookmarked:hover {
-  border-color: rgba(255, 171, 0, 0.4);
-  background: rgba(255, 171, 0, 0.15);
-  box-shadow: 0 8px 32px rgba(255, 171, 0, 0.15);
+  border-color: var(--accent-bookmark-border-strong);
+  background: var(--accent-bookmark-bg-strong);
+  box-shadow: 0 8px 32px var(--accent-bookmark-glow);
 }
 
 /* Bounce animation on toggle */
@@ -383,9 +383,9 @@
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  border: 1px solid rgba(0, 229, 255, 0.35);
+  border: 1px solid var(--accent-cyan-border-strong);
   color: var(--accent-cyan);
-  background: rgba(0, 229, 255, 0.08);
+  background: var(--accent-cyan-bg-subtle);
   font-size: 0.85rem;
   line-height: 1;
 }

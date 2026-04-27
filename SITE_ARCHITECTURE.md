@@ -1,7 +1,7 @@
 # Share Everything Site Architecture
 
-> Version: v2.5
-> Updated: 2026-04-24
+> Version: v2.6
+> Updated: 2026-04-27
 
 ## 1. Overview
 
@@ -32,7 +32,25 @@ Notion Database
           -> localStorage bookmarks
 ```
 
-## 2. Version v2.5 Highlights
+## 2. Version v2.6 Highlights
+
+v2.6 is a production-hardening release focused on deep SSRF defense, CSS design-token centralization, auto-detection of Notion public visibility fields, sitemap enrichment, and developer-experience improvements.
+
+- `/api/image` SSRF defense rewritten from simple regex patterns to a multi-layer pipeline: hostname blocklist (including cloud metadata endpoints), full IPv4 and IPv6 private-range parsing, DNS resolution with private-IP rejection, validated-IP pinning via custom `lookup` so the actual HTTPS request uses the already-verified address, manual redirect-hop validation (up to 4 hops), and per-hop DNS re-verification.
+- Server-side public access policy now auto-detects `checkbox`, `status`, and `select` properties named `Status`, `Public`, `发布状态`, etc., filtering out unsupported types like `date` before ambiguity checks. Explicit `NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS=true` is now required to treat the entire database as public when no visibility field is configured.
+- CSS design tokens centralized in `style.css`: `--accent-cyan-bg`, `--accent-cyan-border`, `--accent-cyan-glow`, `--accent-bookmark`, `--accent-bookmark-bg`, and related derived tokens replace ~30 hardcoded `rgba()` values across `blog-page.css` and `post-page.css`.
+- Sitemap entries now include `<changefreq>` and `<priority>` tags for better search engine guidance.
+- `vercel.json` adds explicit `Cache-Control: public, max-age=0, must-revalidate` for `/` and `X-Content-Type-Options: nosniff` for all `/api/*` routes.
+- SSR template is re-read on every request in development mode (`NODE_ENV=development`), enabling hot-reload of `post.html` without restarting the local server.
+- Local dev server sets `NODE_ENV=development` automatically and hardens its static file path traversal check with `path.resolve` + `path.relative`.
+- `bookmark.js` and `common.js` wrapped in IIFE closures to prevent global scope pollution.
+- `notion-api.js` restructured with IIFE closure and consistent internal organization.
+- `blog-page.js` inline fallback functions annotated with `@canonical-source` comments for traceability to their canonical implementations.
+- `spa-router.js` adds clarifying comments for same-page hash-only navigation passthrough.
+- Smoke tests expanded with new assertions for image proxy SSRF pipeline, DNS pinning, redirect-hop validation, and updated environment variable behavior.
+- `package.json` adds `"type": "commonjs"` and `"license": "MIT"` fields; `.env.example` and `LICENSE` file added to the repository.
+
+### v2.5 Highlights
 
 v2.5 is a code-quality refactoring release focused on DRY compliance, defensive programming, and constant centralization.
 
@@ -67,7 +85,7 @@ v2.3 restores the v1.6-style whole-page SPA route motion while keeping the v2.0 
 - Article content prioritizes the first image with eager loading and high fetch priority.
 - Remote display images can be routed through the same-origin `/api/image` proxy for better cache behavior.
 - Mobile particle density was reduced from 80 to 48, and particles pause briefly while scrolling on mobile.
-- SPA page HTML requests are coalesced, while route swaps keep the v1.6-style 150ms visual exit cue.
+- SPA page HTML requests are coalesced, while route swaps keep the v1.6-style 200ms visual exit cue.
 - SPA article navigation uses `/post.html?id=...` first on local dev origins and falls back to it when another server does not support `/posts/:id` rewrites.
 - SPA route transitions use the v1.6-style whole-page fade/slide cadence: quick fade out, short visual cue, and a 12px page slide in.
 - Nested first-load animations are suppressed during SPA swaps so page titles, top actions, and content do not compete with the whole-page transition.
@@ -103,14 +121,17 @@ Read-only public APIs reject non-`GET` methods with `405` and `Cache-Control: no
 
 | Resource | Cache-Control |
 |---|---|
-| HTML | Browser revalidates through normal static serving / route handlers |
+| Static HTML and `/` | `public, max-age=0, must-revalidate` |
 | CSS and JS | `public, max-age=3600, stale-while-revalidate=86400` |
 | `favicon.png` | `public, max-age=86400` |
 | Successful `/api/image` responses | `public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400` |
-| Public JSON/SSR error responses | `no-store` |
+| Public JSON and SSR post HTML | `no-store` |
+| Public API errors | `no-store` |
 | Disabled `/api/notion` | `no-store` |
 
-Client-side `notion-api.js` also keeps a short in-memory post-list response cache for fast repeated listing transitions.
+`vercel.json` does not set an API-wide `Cache-Control`; individual handlers own their cache policy so `/api/image` can stay edge-cacheable while data and SSR routes stay non-cacheable.
+
+Client-side `notion-api.js` keeps a short bounded in-memory post-list response cache for fast repeated listing transitions. It also keeps post summaries in memory plus `sessionStorage` for bookmark hydration; the memory summary maps are page-lifetime caches and are tracked as a small future hardening item below.
 
 ## 6. Security
 
@@ -118,7 +139,7 @@ Client-side `notion-api.js` also keeps a short in-memory post-list response cach
 - Static pages use CSP meta tags generated from `server/security-policy.js`.
 - SSR article pages generate request-scoped nonces for CSP, JSON-LD, and initial post data.
 - `connect-src` remains same-origin so browser data requests continue through semantic API routes.
-- `/api/image` only accepts `https:` upstream URLs, rejects localhost/private host patterns, enforces image content types, limits image size, applies a timeout, and sends `X-Content-Type-Options: nosniff`.
+- `/api/image` only accepts `https:` upstream URLs, rejects localhost/private literal hosts and private DNS results, pins the validated DNS answer to the actual HTTPS request through a custom lookup, validates every redirect hop manually, enforces image content types, limits image size, applies a timeout, and sends `X-Content-Type-Options: nosniff`.
 - Public error details are hidden unless `EXPOSE_PUBLIC_ERROR_DETAILS=true` is set for local debugging.
 
 ## 7. Repository Structure
@@ -192,7 +213,50 @@ Page-specific scripts are then loaded as needed:
 | `bookmark.js` | Local bookmark persistence and legacy metadata hydration |
 | `notion-api.js` | Browser-side API requests, summary cache, short list response cache |
 
-`spa-router.js` keeps canonical URLs in the address bar, but can load `/post.html?id=...` as a compatibility fallback when a server returns `404` for `/posts/:id`. On local dev origins such as `127.0.0.1` and `localhost`, it loads that static post template first because the local static server does not rewrite `/posts/:id`. Route changes use the v1.6-style whole-page opacity/transform cadence with a short 150ms visual exit cue, then suppress nested first-load animations after the swap so the transition reads as one calm page movement. If a route remains in its exit state too long, the router falls back to a local-compatible full navigation instead of leaving the page transparent or non-clickable.
+### Script Load-Order Dependency Graph
+
+The `data-spa-runtime` scripts MUST load in the order declared in the HTML files. The
+following graph shows which `window.*` globals each script exposes (▸) and consumes (◂):
+
+```
+  font-loader.js
+    (no dependencies — safe to load at any position)
+
+  notion-content.js
+    ▸ window.NotionContent
+
+  runtime-core.js
+    ▸ window.PageRuntime
+
+  site-utils.js
+    ◂ window.NotionContent  (resolveProxiedDisplayImageUrl)
+    ▸ window.SiteUtils
+
+  common.js
+    ▸ window.ParticlesRuntime
+
+  ui-effects.js
+    (reads DOM only, no window.* dependencies)
+
+  seo-meta.js
+    ▸ window.updateSeoMeta
+
+  spa-router.js
+    ◂ window.PageRuntime     (page lifecycle hooks)
+    ◂ window.SiteUtils       (URL helpers)
+    ◂ window.updateSeoMeta   (meta tag sync on navigation)
+    ◂ window.ParticlesRuntime (pointer target reset)
+    ▸ window.SPARouter
+```
+
+Page-specific scripts (`notion-api.js`, `bookmark.js`, `blog-page.js`, `post-page.js`,
+`index-page.js`) are loaded after the runtime set and may safely reference any of the
+globals listed above.
+
+`spa-router.js` MUST be loaded **last** among the runtime scripts because it initializes
+link interception immediately on load and depends on all preceding globals.
+
+`spa-router.js` keeps canonical URLs in the address bar, but can load `/post.html?id=...` as a compatibility fallback when a server returns `404` for `/posts/:id`. On local dev origins such as `127.0.0.1` and `localhost`, it loads that static post template first because the local static server does not rewrite `/posts/:id`. Route changes use the v1.6-style whole-page opacity/transform cadence with a short 200ms visual exit cue, then suppress nested first-load animations after the swap so the transition reads as one calm page movement. If a route remains in its exit state too long, the router falls back to a local-compatible full navigation instead of leaving the page transparent or non-clickable.
 
 ## 9. Image Loading Strategy
 
@@ -271,11 +335,12 @@ Optional:
 | `PUBLIC_POST_CACHE_TTL_MS` | `60000` | Single post cache TTL |
 | `NOTION_REQUEST_TIMEOUT_MS` | `12000` | Server-side Notion request timeout |
 | `NOTION_BLOCK_CHILD_CONCURRENCY` | `4` | Concurrent child block fetches |
-| `NOTION_PUBLIC_PROPERTY_NAME(S)` | empty | Public visibility property names |
-| `NOTION_PUBLIC_STATUS_VALUES` | empty | Allowed public status values |
-| `EXPOSE_PUBLIC_ERROR_DETAILS` | empty | Expose upstream error detail for local debugging only |
+| `NOTION_PUBLIC_PROPERTY_NAME(S)` | auto-detect common supported names | Public visibility property names. Automatic detection only considers `checkbox`, `status`, and `select` properties. Explicit configuration remains strict and reports unsupported types. |
+| `NOTION_PUBLIC_STATUS_VALUES` | `Published`, `Public`, `Live`, `公开`, `已发布`; automatic fallback also tries `Done`, `Complete`, `Visible`, `Online`, `完成`, etc. | Allowed public status values. When explicitly set, only the configured values are accepted. |
+| `NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS` | `false` | Explicit opt-in for public-only databases |
+| `EXPOSE_PUBLIC_ERROR_DETAILS` | `false` | Expose upstream error detail for local debugging only |
 
-When public property variables are empty, the configured Notion database is treated as a public-only content database. If draft/private content is later mixed into the same database, configure explicit public filters before publishing.
+When public property variables are empty, the server tries common public visibility fields such as `Status`, `Public`, and `发布状态`. Unsupported automatic matches, such as a `Published` date property, are ignored before ambiguity checks. If no supported public visibility field is found, the server fails closed instead of exposing the database. Only set `NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS=true` when the configured database contains public content exclusively.
 
 ## 13. Git Naming Rules
 
@@ -299,7 +364,7 @@ When public property variables are empty, the configured Notion database is trea
 - Blog cover preloading and mobile reveal behavior.
 - Blog cover click layering.
 - Remote display image proxying.
-- `/api/image` validation, cache headers, binary response behavior, method guard.
+- `/api/image` private-host/DNS validation, pinned lookup behavior, redirect-hop validation, cache headers, binary response behavior, and method guard.
 - API `405` and `no-store` behavior.
 - Public content error mapping and `Retry-After` propagation.
 - Sitemap behavior.
@@ -310,7 +375,12 @@ When public property variables are empty, the configured Notion database is trea
 - Notion path parameter encoding.
 - Invalid TTL environment variable fallback behavior.
 
-Latest verification:
+## 15. Known Optimization Backlog
+
+- Add conservative length caps for public `category` and `search` query inputs before they enter local search and filtered-query cache keys.
+- Bound the browser-side post summary memory maps in `notion-api.js` with a small LRU while keeping the existing `sessionStorage` compaction behavior.
+
+## 16. Latest Verification
 
 ```powershell
 npm.cmd run check

@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.5.0-00e5ff?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-2.6.0-00e5ff?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/node-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node" />
   <img src="https://img.shields.io/badge/deploy-Vercel-000?style=flat-square&logo=vercel&logoColor=white" alt="Vercel" />
   <img src="https://img.shields.io/badge/CMS-Notion-000?style=flat-square&logo=notion&logoColor=white" alt="Notion" />
@@ -74,7 +74,7 @@
 ### 🔒 安全
 
 - 动态 CSP nonce 注入（SSR 页面）
-- SSRF 五层防线（协议 / IP / 域名 / 大小 / Content-Type）
+- SSRF 多层防线（协议 / 本地域名 / 私网 IP / DNS 私网解析 / 已校验 IP 绑定 / 重定向逐跳校验 / 大小 / Content-Type）
 - XSS 防护（HTML 转义 + URL 协议白名单 + CSS 值白名单）
 - 旧 API 代理永久禁用 (410 Gone)
 - 错误信息脱敏，仅调试模式暴露详情
@@ -193,6 +193,10 @@ PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS=120000
 PUBLIC_POST_CACHE_TTL_MS=60000
 NOTION_REQUEST_TIMEOUT_MS=12000
 NOTION_BLOCK_CHILD_CONCURRENCY=4
+NOTION_PUBLIC_PROPERTY_NAMES=Status,Public,发布状态
+NOTION_PUBLIC_STATUS_VALUES=Published,Public,Live,公开,已发布
+# 仅当整个数据库都可公开时才设为 true
+NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS=false
 ```
 
 ### 3. 本地开发
@@ -229,13 +233,13 @@ npm run check
 | 属性 | 类型 | 说明 |
 |------|------|------|
 | Title | Title | 文章标题（必须） |
-| Status | Status / Select | 发布状态，值为 `Published` / `公开` / `已发布` 中任意一个即视为公开 |
+| Status | Status / Select / Checkbox | 公开可见性字段；Status / Select 值为 `Published` / `Public` / `Live` / `公开` / `已发布` 中任意一个即视为公开，Checkbox 为勾选即公开 |
 | Category | Select | 文章分类（可选） |
 | Tags | Multi-select | 标签（可选） |
 | Excerpt | Rich text | 摘要（可选，自动从属性名推断） |
 | Cover | Files & Media | 封面图（可选，也支持 Notion 页面封面） |
 
-> **提示**：系统会自动检测你的数据库属性，支持中英文属性名。
+> **提示**：系统会自动检测 `Status` / `Public` / `发布状态` 等 checkbox / status / select 公开字段，支持中英文属性名；同名 `Published` 日期字段会被忽略，不会造成歧义。若数据库包含草稿，请确保公开字段存在且已配置；只有整个数据库都可公开时，才设置 `NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS=true`。
 
 ---
 
@@ -251,6 +255,9 @@ npm run check
 | `PUBLIC_POST_CACHE_TTL_MS` | ❌ | `60000` | 单篇文章缓存时间 (ms) |
 | `NOTION_REQUEST_TIMEOUT_MS` | ❌ | `12000` | Notion API 超时 (ms) |
 | `NOTION_BLOCK_CHILD_CONCURRENCY` | ❌ | `4` | 块子元素并发获取数 |
+| `NOTION_PUBLIC_PROPERTY_NAME(S)` | ❌ | 自动识别 `Status` / `Public` 等 checkbox / status / select 字段 | 公开可见性字段名；显式配置时会严格校验类型 |
+| `NOTION_PUBLIC_STATUS_VALUES` | ❌ | 先匹配 `Published`, `Public`, `Live`, `公开`, `已发布`；未命中时再尝试 `Done`, `Complete`, `Visible`, `Online`, `完成` 等兜底值 | 允许公开的状态值；显式设置后只按配置值匹配 |
+| `NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS` | ❌ | `false` | 仅当整个数据库都可公开时显式设为 `true` |
 | `EXPOSE_PUBLIC_ERROR_DETAILS` | ❌ | `false` | 是否在 API 响应中暴露详细错误 |
 
 ---

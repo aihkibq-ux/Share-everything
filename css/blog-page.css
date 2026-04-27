@@ -16,7 +16,7 @@
 
 .empty-state-action:hover {
   border-color: var(--accent-cyan);
-  background: rgba(0, 229, 255, 0.12);
+  background: var(--accent-cyan-bg);
 }
 
 .page-container {
@@ -75,7 +75,7 @@
   color: var(--text-primary);
   background: var(--glass-bg-hover);
   border-color: var(--accent-cyan);
-  box-shadow: 0 0 12px rgba(0, 229, 255, 0.15);
+  box-shadow: 0 0 12px var(--accent-cyan-glow);
 }
 
 /* ===== Blog Search ===== */
@@ -109,7 +109,7 @@
 
 .blog-search input:focus {
   border-color: var(--accent-cyan);
-  box-shadow: 0 0 20px rgba(0, 229, 255, 0.15);
+  box-shadow: 0 0 20px var(--accent-cyan-glow);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -179,7 +179,7 @@
   transform: translateY(-6px);
   box-shadow:
     0 24px 64px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(0, 229, 255, 0.28);
+    0 0 0 1px var(--accent-cyan-ring);
 }
 
 .blog-card-cover-placeholder {
@@ -235,9 +235,9 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   margin-bottom: 14px;
-  background: rgba(0, 229, 255, 0.1);
+  background: var(--accent-cyan-bg);
   color: var(--accent-cyan);
-  border: 1px solid rgba(0, 229, 255, 0.2);
+  border: 1px solid var(--accent-cyan-border);
 }
 
 .blog-card-title {
@@ -316,16 +316,16 @@
 }
 
 .card-bookmark-btn.bookmarked {
-  color: #ffab00;
+  color: var(--accent-bookmark);
 }
 
 .card-bookmark-btn.bookmarked svg {
-  fill: #ffab00;
-  stroke: #ffab00;
+  fill: var(--accent-bookmark);
+  stroke: var(--accent-bookmark);
 }
 
 .card-bookmark-btn.bookmarked:hover {
-  background: rgba(255, 171, 0, 0.1);
+  background: var(--accent-bookmark-bg);
 }
 
 .card-bookmark-btn.bounce svg {
@@ -365,9 +365,9 @@
 }
 
 .page-btn.active {
-  background: rgba(0, 229, 255, 0.15);
+  background: var(--accent-cyan-bg-strong);
   border-color: var(--accent-cyan);
-  box-shadow: 0 0 12px rgba(0, 229, 255, 0.2);
+  box-shadow: 0 0 12px var(--accent-cyan-glow-strong);
 }
 
 

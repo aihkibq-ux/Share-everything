@@ -24,6 +24,7 @@ const {
 } = require("../server/security-policy");
 
 let templatePromise = null;
+const IS_DEVELOPMENT = process.env.NODE_ENV === "development";
 const HEAD_CLOSE_PATTERN = /<\/head>/;
 const MAIN_CLOSE_PATTERN = /<\/main>/;
 const POST_ARTICLE_CLOSE_PATTERN = /<\/article>/;
@@ -33,6 +34,9 @@ const META_TAG_PATTERN = /<meta\b[^>]*>/gi;
 const HTTP_EQUIV_ATTRIBUTE_PATTERN = /\bhttp-equiv\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i;
 
 function getTemplate() {
+  if (IS_DEVELOPMENT) {
+    return fs.readFile(path.join(process.cwd(), "post.html"), "utf8");
+  }
   if (!templatePromise) {
     templatePromise = fs.readFile(path.join(process.cwd(), "post.html"), "utf8");
   }

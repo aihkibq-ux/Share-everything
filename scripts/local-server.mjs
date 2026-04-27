@@ -6,6 +6,13 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const rootDir = path.resolve(fileURLToPath(new URL("../", import.meta.url)));
+
+// Enable development-mode behavior (e.g. template hot-reload) before loading
+// API handlers that inspect NODE_ENV at require time.
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = "development";
+}
+
 const port = Number.parseInt(process.env.PORT || "4173", 10) || 4173;
 const host = process.env.HOST || "127.0.0.1";
 const mimeTypes = new Map([
@@ -92,8 +99,9 @@ async function invokeApiHandler(handler, req, res, query = {}) {
 async function serveStatic(url, res) {
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === "/") pathname = "/index.html";
-  const filePath = path.normalize(path.join(rootDir, pathname));
-  if (!filePath.startsWith(rootDir)) {
+  const filePath = path.resolve(rootDir, `.${pathname}`);
+  const relativePath = path.relative(rootDir, filePath);
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
     res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
     res.end("Forbidden");
     return;

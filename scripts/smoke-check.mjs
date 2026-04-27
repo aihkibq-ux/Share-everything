@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -244,6 +245,47 @@ function createHeadersMock(initialEntries = {}) {
     get(name) {
       return headers.get(String(name).toLowerCase()) || null;
     },
+  };
+}
+
+const publicImageDnsLookup = async () => [{ address: "93.184.216.34", family: 4 }];
+
+function createImageRequestMock({
+  status = 200,
+  headers = {},
+  body = Buffer.alloc(0),
+  onRequest = () => {},
+} = {}) {
+  return (url, options = {}, callback) => {
+    onRequest(url, options);
+
+    const response = new EventEmitter();
+    response.statusCode = status;
+    response.headers = headers;
+    response.resume = () => {};
+    response.destroy = (error) => {
+      if (error) {
+        setTimeout(() => response.emit("error", error), 0);
+      }
+    };
+
+    const request = new EventEmitter();
+    request.end = () => {
+      setTimeout(() => {
+        callback(response);
+        setTimeout(() => {
+          if (body?.byteLength) {
+            response.emit("data", body);
+          }
+          response.emit("end");
+        }, 0);
+      }, 0);
+    };
+    request.destroy = (error) => {
+      setTimeout(() => request.emit("error", error || new Error("request destroyed")), 0);
+    };
+
+    return request;
   };
 }
 
@@ -550,6 +592,8 @@ const postHtml = read("post.html");
 const gitAttributes = read(".gitattributes");
 const packageJson = read("package.json");
 const vercelJson = read("vercel.json");
+const envExample = read(".env.example");
+const licenseText = read("LICENSE");
 const localServerJs = read("scripts/local-server.mjs");
 const styleCss = read("css/style.css");
 const blogPageCss = read("css/blog-page.css");
@@ -698,7 +742,12 @@ expectIncludes(notionApiJs, "POSTS_RESPONSE_CACHE_TTL", "notion client should ke
 expectIncludes(notionContentJs, "IMAGE_PROXY_PATH", "shared notion content should proxy remote display images through the same-origin image endpoint");
 expectIncludes(apiImageJs, "IMAGE_PROXY_CACHE_CONTROL", "image proxy endpoint should cache successful image responses at the edge");
 expectIncludes(packageJson, '"dev": "node scripts/local-server.mjs"', "package scripts should expose the local API-aware dev server");
+expectIncludes(packageJson, '"license": "MIT"', "package metadata should match the published README license");
+expectIncludes(envExample, "NOTION_PUBLIC_PROPERTY_NAMES", ".env.example should document the public visibility guardrail variables");
+expectIncludes(licenseText, "MIT License", "repository should include the LICENSE file referenced by README.md");
 expectIncludes(localServerJs, '["/api/image", require("../api/image.js")]', "local dev server should route the image proxy endpoint");
+expectIncludes(localServerJs, "path.relative(rootDir, filePath)", "local dev server should validate static paths by relative containment");
+expectIncludes(localServerJs, "path.isAbsolute(relativePath)", "local dev server should reject absolute relative paths after static path resolution");
 expectIncludes(spaRouterJs, 'script[src]:not([data-spa-runtime])', "SPA router should skip shared runtime scripts via HTML metadata");
 expectIncludes(spaRouterJs, "waitForRouteExitCue", "SPA router should preserve the v1.6-style route exit cue");
 expectIncludes(spaRouterJs, "ROUTE_EXIT_CUE_MS = 200", "SPA router should keep a visible route exit pause");
@@ -2104,27 +2153,31 @@ await apiPostDataHandler({ method: "HEAD", query: { id: "post-1" } }, postDataHe
 assert.equal(postDataHeadRes.statusCode, 405, "post data endpoint should reject HEAD without loading the post detail tree");
 expectIncludes(apiImageJs, "IMAGE_PROXY_MAX_BYTES", "image proxy endpoint should bound upstream image size");
 expectIncludes(apiImageJs, "isBlockedImageHost", "image proxy endpoint should reject local and private upstream hosts");
+expectIncludes(apiImageJs, "resolvePublicImageHost", "image proxy endpoint should reject hosts that resolve to private addresses");
+expectIncludes(apiImageJs, "__IMAGE_PROXY_HTTPS_REQUEST__", "image proxy endpoint should bind checked DNS answers to the upstream request");
+expectIncludes(apiImageJs, "lookup(hostname, options, callback)", "image proxy endpoint should use a pinned lookup for the validated upstream host");
 expectIncludes(apiImageJs, "X-Content-Type-Options", "image proxy endpoint should prevent content-type sniffing");
 let imageProxyFetchUrl = "";
+let imageProxyLookupAddress = "";
 const fakeImageBody = Buffer.from("png");
 const successfulImageProxyHandler = loadCommonJsModule("api/image.js", [], {
-  fetch: async (url) => {
-    imageProxyFetchUrl = String(url);
-    return {
-      ok: true,
-      status: 200,
-      headers: createHeadersMock({
-        "content-type": "image/png",
-        "content-length": String(fakeImageBody.byteLength),
-      }),
-      async arrayBuffer() {
-        return fakeImageBody.buffer.slice(
-          fakeImageBody.byteOffset,
-          fakeImageBody.byteOffset + fakeImageBody.byteLength,
-        );
-      },
-    };
-  },
+  __IMAGE_PROXY_DNS_LOOKUP__: publicImageDnsLookup,
+  __IMAGE_PROXY_HTTPS_REQUEST__: createImageRequestMock({
+    body: fakeImageBody,
+    headers: {
+      "content-type": "image/png",
+      "content-length": String(fakeImageBody.byteLength),
+    },
+    onRequest(url, options) {
+      imageProxyFetchUrl = String(url);
+      assert.equal(typeof options.lookup, "function", "image proxy endpoint should pin the validated DNS address");
+      options.lookup("assets.example.com", {}, (error, address, family) => {
+        assert.equal(error, null);
+        imageProxyLookupAddress = address;
+        assert.equal(family, 4, "image proxy endpoint should preserve the resolved IP family");
+      });
+    },
+  }),
 });
 const imageProxySuccessRes = createApiResponseRecorder();
 await successfulImageProxyHandler({
@@ -2133,6 +2186,7 @@ await successfulImageProxyHandler({
 }, imageProxySuccessRes);
 assert.equal(imageProxySuccessRes.statusCode, 200, "image proxy endpoint should return proxied images");
 assert.equal(imageProxyFetchUrl, "https://assets.example.com/cover.png", "image proxy endpoint should fetch the normalized upstream image URL");
+assert.equal(imageProxyLookupAddress, "93.184.216.34", "image proxy endpoint should connect to the DNS answer it already validated");
 assert.equal(imageProxySuccessRes.getHeader("content-type"), "image/png", "image proxy endpoint should preserve upstream image content type");
 assert.ok(
   imageProxySuccessRes.getHeader("cache-control")?.includes("s-maxage=604800"),
@@ -2141,10 +2195,13 @@ assert.ok(
 assert.ok(Buffer.isBuffer(imageProxySuccessRes.textBody), "image proxy endpoint should send a binary image buffer");
 let blockedImageProxyFetchCount = 0;
 const blockedImageProxyHandler = loadCommonJsModule("api/image.js", [], {
-  fetch: async () => {
-    blockedImageProxyFetchCount += 1;
-    throw new Error("Blocked image URL should not be fetched");
-  },
+  __IMAGE_PROXY_DNS_LOOKUP__: publicImageDnsLookup,
+  __IMAGE_PROXY_HTTPS_REQUEST__: createImageRequestMock({
+    onRequest() {
+      blockedImageProxyFetchCount += 1;
+      throw new Error("Blocked image URL should not be fetched");
+    },
+  }),
 });
 const imageProxyBlockedRes = createApiResponseRecorder();
 await blockedImageProxyHandler({
@@ -2153,6 +2210,68 @@ await blockedImageProxyHandler({
 }, imageProxyBlockedRes);
 assert.equal(imageProxyBlockedRes.statusCode, 400, "image proxy endpoint should reject private upstream hosts");
 assert.equal(blockedImageProxyFetchCount, 0, "image proxy endpoint should reject private hosts before fetching");
+const imageProxyBlockedIpv6Res = createApiResponseRecorder();
+await blockedImageProxyHandler({
+  method: "GET",
+  query: { src: "https://[::1]/private.png" },
+}, imageProxyBlockedIpv6Res);
+assert.equal(imageProxyBlockedIpv6Res.statusCode, 400, "image proxy endpoint should reject IPv6 loopback upstream hosts");
+assert.equal(blockedImageProxyFetchCount, 0, "image proxy endpoint should reject blocked IPv6 hosts before fetching");
+const imageProxyBlockedMappedIpv6Res = createApiResponseRecorder();
+await blockedImageProxyHandler({
+  method: "GET",
+  query: { src: "https://[::ffff:127.0.0.1]/private.png" },
+}, imageProxyBlockedMappedIpv6Res);
+assert.equal(imageProxyBlockedMappedIpv6Res.statusCode, 400, "image proxy endpoint should reject IPv4-mapped IPv6 upstream hosts");
+assert.equal(blockedImageProxyFetchCount, 0, "image proxy endpoint should reject blocked IPv4-mapped IPv6 hosts before fetching");
+const dnsBlockedImageProxyHandler = loadCommonJsModule("api/image.js", [], {
+  __IMAGE_PROXY_DNS_LOOKUP__: async () => [{ address: "10.0.0.8", family: 4 }],
+  __IMAGE_PROXY_HTTPS_REQUEST__: createImageRequestMock({
+    onRequest() {
+      throw new Error("DNS-blocked image URL should not be fetched");
+    },
+  }),
+});
+const imageProxyDnsBlockedRes = createApiResponseRecorder();
+await dnsBlockedImageProxyHandler({
+  method: "GET",
+  query: { src: "https://assets.example.com/private.png" },
+}, imageProxyDnsBlockedRes);
+assert.equal(imageProxyDnsBlockedRes.statusCode, 400, "image proxy endpoint should reject upstream hosts whose DNS resolves to private addresses");
+const mappedDnsBlockedImageProxyHandler = loadCommonJsModule("api/image.js", [], {
+  __IMAGE_PROXY_DNS_LOOKUP__: async () => [{ address: "::ffff:10.0.0.8", family: 6 }],
+  __IMAGE_PROXY_HTTPS_REQUEST__: createImageRequestMock({
+    onRequest() {
+      throw new Error("DNS-blocked IPv4-mapped image URL should not be fetched");
+    },
+  }),
+});
+const imageProxyMappedDnsBlockedRes = createApiResponseRecorder();
+await mappedDnsBlockedImageProxyHandler({
+  method: "GET",
+  query: { src: "https://assets.example.com/private.png" },
+}, imageProxyMappedDnsBlockedRes);
+assert.equal(imageProxyMappedDnsBlockedRes.statusCode, 400, "image proxy endpoint should reject DNS answers with private IPv4 embedded in IPv6");
+let redirectImageProxyFetchCount = 0;
+const redirectBlockedImageProxyHandler = loadCommonJsModule("api/image.js", [], {
+  __IMAGE_PROXY_DNS_LOOKUP__: publicImageDnsLookup,
+  __IMAGE_PROXY_HTTPS_REQUEST__: createImageRequestMock({
+    status: 302,
+    headers: {
+      location: "https://[::1]/private.png",
+    },
+    onRequest() {
+      redirectImageProxyFetchCount += 1;
+    },
+  }),
+});
+const imageProxyRedirectBlockedRes = createApiResponseRecorder();
+await redirectBlockedImageProxyHandler({
+  method: "GET",
+  query: { src: "https://assets.example.com/redirect.png" },
+}, imageProxyRedirectBlockedRes);
+assert.equal(imageProxyRedirectBlockedRes.statusCode, 400, "image proxy endpoint should reject redirects to blocked hosts");
+assert.equal(redirectImageProxyFetchCount, 1, "image proxy endpoint should stop before fetching a blocked redirect target");
 const imageProxyMethodRes = createApiResponseRecorder();
 await apiImageHandler({ method: "POST", query: { src: "https://assets.example.com/cover.png" } }, imageProxyMethodRes);
 assert.equal(imageProxyMethodRes.statusCode, 405, "image proxy endpoint should reject unsupported methods");
@@ -2270,6 +2389,8 @@ expectIncludes(serverNotionJs, "AbortController", "server notion layer should ab
 expectIncludes(serverNotionJs, "runWithBlockChildConcurrency", "server notion layer should limit recursive block child fetch concurrency");
 expectIncludes(serverNotionJs, "Ambiguous Notion public visibility property configuration", "server notion layer should fail closed when multiple public visibility fields match");
 expectIncludes(serverNotionJs, "findPropertyEntriesByCandidates", "server notion layer should inspect all matching public visibility properties");
+expectIncludes(serverNotionJs, "DEFAULT_PUBLIC_PROPERTY_CANDIDATES", "server notion layer should infer common public visibility fields before exposing content");
+expectIncludes(serverNotionJs, "NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS", "server notion layer should require explicit opt-in for database-wide public mode");
 expectIncludes(serverNotionJs, 'require("../js/notion-content")', "server notion layer should reuse the shared notion content helpers");
 expectIncludes(serverNotionJs, "buildSharedArticleStructuredData", "server notion layer should delegate article structured data to the shared content helper");
 expectIncludes(serverNotionJs, "resolveNotionContentSchema", "server notion layer should resolve renamed content properties from database metadata");
@@ -2314,15 +2435,21 @@ assert.equal(
   null,
   "category prefilter should disable itself instead of breaking requests when the Notion schema drifts",
 );
-const databaseWidePublicAccessPolicy = withEnvOverrides({
+const inferredStatusPublicAccessPolicy = withEnvOverrides({
   NOTION_PUBLIC_PROPERTY_NAME: null,
   NOTION_PUBLIC_PROPERTY_NAMES: null,
   NOTION_PUBLIC_STATUS_VALUES: null,
+  NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: null,
 }, () => serverNotionHelpers.buildPublicAccessPolicyFromDatabase({
   properties: {
-    Workflow: {
-      id: "workflow",
-      name: "Workflow",
+    Published: {
+      id: "published-date",
+      name: "Published",
+      type: "date",
+    },
+    Status: {
+      id: "status",
+      name: "Status",
       type: "status",
       status: {
         options: [
@@ -2334,14 +2461,94 @@ const databaseWidePublicAccessPolicy = withEnvOverrides({
   },
 }));
 assert.equal(
+  inferredStatusPublicAccessPolicy.propertyName,
+  "Status",
+  "server notion layer should infer the common Status field as the default public visibility field",
+);
+assert.equal(
+  JSON.stringify(inferredStatusPublicAccessPolicy.filter),
+  JSON.stringify({
+    property: "Status",
+    status: { equals: "Published" },
+  }),
+  "server notion layer should default to filtering only published pages when a Status field is present",
+);
+assert.throws(
+  () => withEnvOverrides({
+    NOTION_PUBLIC_PROPERTY_NAME: "Published",
+    NOTION_PUBLIC_PROPERTY_NAMES: null,
+    NOTION_PUBLIC_STATUS_VALUES: null,
+    NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: null,
+  }, () => serverNotionHelpers.buildPublicAccessPolicyFromDatabase({
+    properties: {
+      Published: {
+        id: "published-date",
+        name: "Published",
+        type: "date",
+      },
+      Status: {
+        id: "status",
+        name: "Status",
+        type: "status",
+        status: {
+          options: [
+            { id: "draft", name: "Draft" },
+            { id: "published", name: "Published" },
+          ],
+        },
+      },
+    },
+  })),
+  /Unsupported public visibility property type "date"/,
+  "server notion layer should keep explicit public property configuration strict for unsupported property types",
+);
+assert.throws(
+  () => withEnvOverrides({
+    NOTION_PUBLIC_PROPERTY_NAME: null,
+    NOTION_PUBLIC_PROPERTY_NAMES: null,
+    NOTION_PUBLIC_STATUS_VALUES: null,
+    NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: null,
+  }, () => serverNotionHelpers.buildPublicAccessPolicyFromDatabase({
+    properties: {
+      Workflow: {
+        id: "workflow",
+        name: "Workflow",
+        type: "status",
+        status: {
+          options: [
+            { id: "draft", name: "Draft" },
+            { id: "published", name: "Published" },
+          ],
+        },
+      },
+    },
+  })),
+  /Notion public visibility property is not configured/,
+  "server notion layer should fail closed when no public visibility field is configured",
+);
+const databaseWidePublicAccessPolicy = withEnvOverrides({
+  NOTION_PUBLIC_PROPERTY_NAME: null,
+  NOTION_PUBLIC_PROPERTY_NAMES: null,
+  NOTION_PUBLIC_STATUS_VALUES: null,
+  NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
+}, () => serverNotionHelpers.buildPublicAccessPolicyFromDatabase({
+  properties: {
+    Workflow: {
+      id: "workflow",
+      name: "Workflow",
+      type: "status",
+    },
+  },
+}));
+assert.equal(
   databaseWidePublicAccessPolicy.propertyType,
   "database",
-  "server notion layer should default to exposing the whole configured database when no explicit public visibility field is configured",
+  "server notion layer should require an explicit opt-in before exposing the whole configured database",
 );
 assert.equal(
   databaseWidePublicAccessPolicy.filter,
   null,
-  "database-wide public mode should not emit an additional Notion filter",
+  "explicit database-wide public mode should not emit an additional Notion filter",
 );
 const explicitPublicAccessPolicy = withEnvOverrides({
   NOTION_PUBLIC_PROPERTY_NAME: "Workflow",
@@ -2446,6 +2653,7 @@ const queryCacheServerNotion = loadCommonJsModule("server/notion-server.js", [],
       NOTION_TOKEN: "test-token",
       NOTION_DATABASE_ID: "query-cache-database",
       SITE_URL: "https://example.com",
+      NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
       PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS: "120000",
     },
   },
@@ -2604,6 +2812,7 @@ const dedupedServerNotion = loadCommonJsModule("server/notion-server.js", [], {
       NOTION_TOKEN: "test-token",
       NOTION_DATABASE_ID: "test-database",
       SITE_URL: "https://example.com",
+      NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
     },
   },
   fetch: async (url) => {
@@ -2692,6 +2901,7 @@ const encodedPathServerNotion = loadCommonJsModule("server/notion-server.js", []
       NOTION_TOKEN: "test-token",
       NOTION_DATABASE_ID: "encoded/database",
       SITE_URL: "https://example.com",
+      NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
     },
   },
   fetch: async (url) => {
@@ -2759,6 +2969,7 @@ const retryServerNotion = loadCommonJsModule("server/notion-server.js", [], {
       NOTION_TOKEN: "test-token",
       NOTION_DATABASE_ID: "retry-database",
       SITE_URL: "https://example.com",
+      NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
     },
   },
   fetch: async (url) => {
@@ -2862,6 +3073,7 @@ const invalidPostCacheServerNotion = loadCommonJsModule("server/notion-server.js
       NOTION_DATABASE_ID: "ttl-post-database",
       PUBLIC_POST_CACHE_TTL_MS: "not-a-number",
       SITE_URL: "https://example.com",
+      NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
     },
   },
   fetch: async (url) => {
@@ -2931,6 +3143,7 @@ const invalidMetadataServerNotion = loadCommonJsModule("server/notion-server.js"
       NOTION_DATABASE_ID: "ttl-metadata-database",
       DATABASE_METADATA_TTL_MS: "not-a-number",
       SITE_URL: "https://example.com",
+      NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
     },
   },
   fetch: async (url) => {
@@ -2996,6 +3209,17 @@ expectIncludes(vercelJson, '"/posts/:id"', "Vercel should rewrite canonical arti
 expectIncludes(vercelJson, '"/sitemap.xml"', "Vercel should serve a dynamic sitemap");
 expectIncludes(vercelJson, '"/favicon.png"', "Vercel should set cache headers for the real favicon asset");
 expectIncludes(vercelJson, "max-age=3600, stale-while-revalidate=86400", "Vercel should give versioned static scripts and styles a short browser cache");
+const parsedVercelJson = JSON.parse(vercelJson);
+const rootHeaderRule = parsedVercelJson.headers.find((entry) => entry.source === "/");
+assert.ok(
+  rootHeaderRule?.headers?.some((header) => header.key === "Cache-Control" && header.value === "public, max-age=0, must-revalidate"),
+  "Vercel should explicitly give the root route the same revalidation policy as static HTML files",
+);
+const apiHeaderRule = parsedVercelJson.headers.find((entry) => entry.source === "/api/(.*)");
+assert.ok(
+  !apiHeaderRule?.headers?.some((header) => String(header.key).toLowerCase() === "cache-control"),
+  "Vercel should leave API Cache-Control decisions to individual handlers so /api/image can be edge-cacheable",
+);
 expectIncludes(vercelJson, "frame-ancestors 'none'", "Vercel global CSP should preserve clickjacking protection");
 expectIncludes(vercelJson, '"X-Frame-Options"', "Vercel should retain legacy frame-denial protection");
 expectNotIncludes(vercelJson, "script-src-elem 'self' 'unsafe-inline'", "Vercel global CSP should not allow arbitrary inline script elements");
