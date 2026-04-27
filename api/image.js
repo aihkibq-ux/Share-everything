@@ -12,6 +12,7 @@ const IMAGE_PROXY_TIMEOUT_MS = 10_000;
 const IMAGE_PROXY_MAX_BYTES = 8 * 1024 * 1024;
 const IMAGE_PROXY_MAX_REDIRECTS = 4;
 const IMAGE_PROXY_CACHE_CONTROL = "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400";
+const BLOCKED_IMAGE_CONTENT_TYPES = new Set(["image/svg+xml"]);
 const IMAGE_PROXY_REQUEST_HEADERS = Object.freeze({
   Accept: "image/avif,image/webp,image/*,*/*;q=0.8",
 });
@@ -442,7 +443,12 @@ async function fetchImageResponse(source, { signal } = {}) {
 }
 
 function isImageContentType(contentType) {
-  return /^image\/[a-z0-9.+-]+/i.test(String(contentType || "").trim());
+  const mediaType = String(contentType || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+
+  return /^image\/[a-z0-9.+-]+$/.test(mediaType) && !BLOCKED_IMAGE_CONTENT_TYPES.has(mediaType);
 }
 
 async function readBoundedImageBuffer(response) {

@@ -1,6 +1,6 @@
 # Share Everything Site Architecture
 
-> Version: v2.6
+> Version: v2.7
 > Updated: 2026-04-27
 
 ## 1. Overview
@@ -32,12 +32,21 @@ Notion Database
           -> localStorage bookmarks
 ```
 
-## 2. Version v2.6 Highlights
+## 2. Version v2.7 Highlights
 
-v2.6 is a production-hardening release focused on deep SSRF defense, CSS design-token centralization, auto-detection of Notion public visibility fields, sitemap enrichment, and developer-experience improvements.
+v2.7 restores and locks the v2.5-compatible database-wide public content behavior, and fixes the two review findings around SVG image proxying and unbounded public list filters.
+
+- The configured Notion database is always treated as public content. This is the intended long-term behavior for this project; public/published/status fields are ignored by the runtime and should only be used for Notion-side organization.
+- Legacy public visibility environment variables and field-based filtering paths remain removed from the server, and smoke tests assert that the runtime keeps the database-wide public policy.
+- `/api/image` now rejects `image/svg+xml` responses, including SVG content types with parameters, so active SVG cannot be served back from this site's origin.
+- Public list `category` and `search` query inputs are capped before cache-key generation and local filtering to avoid wasteful memory/CPU use from very large query strings.
+
+### v2.6 Highlights
+
+v2.6 is a production-hardening release focused on deep SSRF defense, CSS design-token centralization, preserving v2.5-compatible database-wide public content, sitemap enrichment, and developer-experience improvements.
 
 - `/api/image` SSRF defense rewritten from simple regex patterns to a multi-layer pipeline: hostname blocklist (including cloud metadata endpoints), full IPv4 and IPv6 private-range parsing, DNS resolution with private-IP rejection, validated-IP pinning via custom `lookup` so the actual HTTPS request uses the already-verified address, manual redirect-hop validation (up to 4 hops), and per-hop DNS re-verification.
-- Server-side public access policy now auto-detects `checkbox`, `status`, and `select` properties named `Status`, `Public`, `发布状态`, etc., filtering out unsupported types like `date` before ambiguity checks. Explicit `NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS=true` is now required to treat the entire database as public when no visibility field is configured.
+- Server-side public access policy intentionally stays compatible with v2.5: the whole configured Notion database is treated as public content. This project should keep that database-wide public behavior; public/published fields are considered Notion-side organization only, not runtime filters.
 - CSS design tokens centralized in `style.css`: `--accent-cyan-bg`, `--accent-cyan-border`, `--accent-cyan-glow`, `--accent-bookmark`, `--accent-bookmark-bg`, and related derived tokens replace ~30 hardcoded `rgba()` values across `blog-page.css` and `post-page.css`.
 - Sitemap entries now include `<changefreq>` and `<priority>` tags for better search engine guidance.
 - `vercel.json` adds explicit `Cache-Control: public, max-age=0, must-revalidate` for `/` and `X-Content-Type-Options: nosniff` for all `/api/*` routes.
@@ -335,12 +344,9 @@ Optional:
 | `PUBLIC_POST_CACHE_TTL_MS` | `60000` | Single post cache TTL |
 | `NOTION_REQUEST_TIMEOUT_MS` | `12000` | Server-side Notion request timeout |
 | `NOTION_BLOCK_CHILD_CONCURRENCY` | `4` | Concurrent child block fetches |
-| `NOTION_PUBLIC_PROPERTY_NAME(S)` | auto-detect common supported names | Public visibility property names. Automatic detection only considers `checkbox`, `status`, and `select` properties. Explicit configuration remains strict and reports unsupported types. |
-| `NOTION_PUBLIC_STATUS_VALUES` | `Published`, `Public`, `Live`, `公开`, `已发布`; automatic fallback also tries `Done`, `Complete`, `Visible`, `Online`, `完成`, etc. | Allowed public status values. When explicitly set, only the configured values are accepted. |
-| `NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS` | `false` | Explicit opt-in for public-only databases |
 | `EXPOSE_PUBLIC_ERROR_DETAILS` | `false` | Expose upstream error detail for local debugging only |
 
-When public property variables are empty, the server tries common public visibility fields such as `Status`, `Public`, and `发布状态`. Unsupported automatic matches, such as a `Published` date property, are ignored before ambiguity checks. If no supported public visibility field is found, the server fails closed instead of exposing the database. Only set `NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS=true` when the configured database contains public content exclusively.
+The server exposes the entire configured Notion database. This is the deliberate long-term project policy and matches v2.5 behavior. Keep drafts in a separate Notion database; `Status`, `Public`, and similar public/published fields are ignored by the runtime.
 
 ## 13. Git Naming Rules
 

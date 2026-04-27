@@ -301,7 +301,7 @@
       }
 
       if (code === "notion_public_config_error") {
-        return "Notion 公开字段或发布状态配置异常，请检查数据库里的公开/已发布列。";
+        return "当前部署仍在返回旧版公开字段错误，请确认线上已部署 v2.7，并检查 Vercel 的 Notion 环境变量。";
       }
 
       if (status === 401 || status === 403 || notionCode === "unauthorized" || notionCode === "restricted_resource") {

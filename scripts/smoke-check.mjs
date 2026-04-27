@@ -591,6 +591,7 @@ const blogHtml = read("blog.html");
 const postHtml = read("post.html");
 const gitAttributes = read(".gitattributes");
 const packageJson = read("package.json");
+const readmeMd = read("README.md");
 const vercelJson = read("vercel.json");
 const envExample = read(".env.example");
 const licenseText = read("LICENSE");
@@ -645,6 +646,7 @@ const {
   "buildDatabaseSorts",
   "buildPublicAccessPolicyFromDatabase",
   "filterPostsBySearch",
+  "normalizePostQueryFilters",
   "renderPostContent",
 ]);
 
@@ -743,7 +745,8 @@ expectIncludes(notionContentJs, "IMAGE_PROXY_PATH", "shared notion content shoul
 expectIncludes(apiImageJs, "IMAGE_PROXY_CACHE_CONTROL", "image proxy endpoint should cache successful image responses at the edge");
 expectIncludes(packageJson, '"dev": "node scripts/local-server.mjs"', "package scripts should expose the local API-aware dev server");
 expectIncludes(packageJson, '"license": "MIT"', "package metadata should match the published README license");
-expectIncludes(envExample, "NOTION_PUBLIC_PROPERTY_NAMES", ".env.example should document the public visibility guardrail variables");
+expectIncludes(envExample, "whole configured Notion database is public", ".env.example should document database-wide public mode");
+expectNotIncludes(envExample, "NOTION_PUBLIC_PROPERTY_NAMES", ".env.example should not encourage field-based public filtering");
 expectIncludes(licenseText, "MIT License", "repository should include the LICENSE file referenced by README.md");
 expectIncludes(localServerJs, '["/api/image", require("../api/image.js")]', "local dev server should route the image proxy endpoint");
 expectIncludes(localServerJs, "path.relative(rootDir, filePath)", "local dev server should validate static paths by relative containment");
@@ -2156,6 +2159,7 @@ expectIncludes(apiImageJs, "isBlockedImageHost", "image proxy endpoint should re
 expectIncludes(apiImageJs, "resolvePublicImageHost", "image proxy endpoint should reject hosts that resolve to private addresses");
 expectIncludes(apiImageJs, "__IMAGE_PROXY_HTTPS_REQUEST__", "image proxy endpoint should bind checked DNS answers to the upstream request");
 expectIncludes(apiImageJs, "lookup(hostname, options, callback)", "image proxy endpoint should use a pinned lookup for the validated upstream host");
+expectIncludes(apiImageJs, "BLOCKED_IMAGE_CONTENT_TYPES", "image proxy endpoint should reject active image formats such as SVG");
 expectIncludes(apiImageJs, "X-Content-Type-Options", "image proxy endpoint should prevent content-type sniffing");
 let imageProxyFetchUrl = "";
 let imageProxyLookupAddress = "";
@@ -2193,6 +2197,23 @@ assert.ok(
   "image proxy endpoint should make successful images edge-cacheable",
 );
 assert.ok(Buffer.isBuffer(imageProxySuccessRes.textBody), "image proxy endpoint should send a binary image buffer");
+const svgImageProxyHandler = loadCommonJsModule("api/image.js", [], {
+  __IMAGE_PROXY_DNS_LOOKUP__: publicImageDnsLookup,
+  __IMAGE_PROXY_HTTPS_REQUEST__: createImageRequestMock({
+    body: Buffer.from("<svg></svg>"),
+    headers: {
+      "content-type": "image/svg+xml; charset=utf-8",
+      "content-length": "11",
+    },
+  }),
+});
+const imageProxySvgRes = createApiResponseRecorder();
+await svgImageProxyHandler({
+  method: "GET",
+  query: { src: "https://assets.example.com/active.svg" },
+}, imageProxySvgRes);
+assert.equal(imageProxySvgRes.statusCode, 415, "image proxy endpoint should reject active SVG images");
+assert.equal(imageProxySvgRes.getHeader("cache-control"), "no-store", "rejected SVG proxy responses should not be cached");
 let blockedImageProxyFetchCount = 0;
 const blockedImageProxyHandler = loadCommonJsModule("api/image.js", [], {
   __IMAGE_PROXY_DNS_LOOKUP__: publicImageDnsLookup,
@@ -2276,7 +2297,9 @@ const imageProxyMethodRes = createApiResponseRecorder();
 await apiImageHandler({ method: "POST", query: { src: "https://assets.example.com/cover.png" } }, imageProxyMethodRes);
 assert.equal(imageProxyMethodRes.statusCode, 405, "image proxy endpoint should reject unsupported methods");
 expectIncludes(publicContentJs, "getPublicPostErrorStatus", "public content helper should centralize post error mapping");
-expectIncludes(publicContentJs, "notion_public_config_error", "public content helper should surface public access misconfiguration as a server error");
+expectNotIncludes(publicContentJs, "notion_public_config_error", "public content helper should not keep field-based public access errors in database-wide public mode");
+expectNotIncludes(blogPageJs, "公开字段或发布状态", "blog frontend should not suggest field-based public publishing in database-wide public mode");
+expectNotIncludes(readmeMd, "发布状态改为", "README should not describe status-field publishing in database-wide public mode");
 expectIncludes(publicContentJs, "notion_timeout_error", "public content helper should preserve upstream timeout status");
 expectIncludes(publicContentJs, "Retry-After", "public content helper should preserve retry guidance for upstream rate limits");
 expectIncludes(publicContentJs, "restricted_resource", "public content helper should classify upstream Notion permission failures as server-side integration faults");
@@ -2383,14 +2406,16 @@ expectIncludes(serverNotionJs, "PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS", "server notio
 expectIncludes(serverNotionJs, "buildContentSchema", "server notion layer should derive content property mappings from database metadata");
 expectIncludes(serverNotionJs, "buildDatabaseSorts", "server notion layer should derive list sorting from the resolved schema");
 expectIncludes(serverNotionJs, "normalizePostQueryFilters", "server notion layer should normalize category and search inputs before querying");
+expectIncludes(serverNotionJs, "PUBLIC_SEARCH_QUERY_MAX_LENGTH", "server notion layer should cap public search query input length");
 expectIncludes(serverNotionJs, "hasPostQueryFilters", "server notion layer should detect when filtered queries need extra work");
 expectIncludes(serverNotionJs, "NOTION_REQUEST_TIMEOUT_MS", "server notion layer should define a request timeout for upstream calls");
 expectIncludes(serverNotionJs, "AbortController", "server notion layer should abort slow Notion requests");
 expectIncludes(serverNotionJs, "runWithBlockChildConcurrency", "server notion layer should limit recursive block child fetch concurrency");
-expectIncludes(serverNotionJs, "Ambiguous Notion public visibility property configuration", "server notion layer should fail closed when multiple public visibility fields match");
-expectIncludes(serverNotionJs, "findPropertyEntriesByCandidates", "server notion layer should inspect all matching public visibility properties");
-expectIncludes(serverNotionJs, "DEFAULT_PUBLIC_PROPERTY_CANDIDATES", "server notion layer should infer common public visibility fields before exposing content");
-expectIncludes(serverNotionJs, "NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS", "server notion layer should require explicit opt-in for database-wide public mode");
+expectIncludes(serverNotionJs, "buildDatabaseWidePublicAccessPolicy", "server notion layer should keep v2.5-compatible database-wide public mode");
+expectNotIncludes(serverNotionJs, "findPropertyEntriesByCandidates", "server notion layer should not inspect public visibility properties in database-wide public mode");
+expectNotIncludes(serverNotionJs, "NOTION_PUBLIC_PROPERTY_NAME", "server notion layer should ignore public visibility property env vars in database-wide public mode");
+expectNotIncludes(serverNotionJs, "NOTION_PUBLIC_STATUS_VALUES", "server notion layer should ignore public status env vars in database-wide public mode");
+expectNotIncludes(serverNotionJs, "NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS", "server notion layer should not require opt-in for database-wide public mode");
 expectIncludes(serverNotionJs, 'require("../js/notion-content")', "server notion layer should reuse the shared notion content helpers");
 expectIncludes(serverNotionJs, "buildSharedArticleStructuredData", "server notion layer should delegate article structured data to the shared content helper");
 expectIncludes(serverNotionJs, "resolveNotionContentSchema", "server notion layer should resolve renamed content properties from database metadata");
@@ -2435,12 +2460,7 @@ assert.equal(
   null,
   "category prefilter should disable itself instead of breaking requests when the Notion schema drifts",
 );
-const inferredStatusPublicAccessPolicy = withEnvOverrides({
-  NOTION_PUBLIC_PROPERTY_NAME: null,
-  NOTION_PUBLIC_PROPERTY_NAMES: null,
-  NOTION_PUBLIC_STATUS_VALUES: null,
-  NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: null,
-}, () => serverNotionHelpers.buildPublicAccessPolicyFromDatabase({
+const databaseWideDefaultPublicAccessPolicy = withEnvOverrides({}, () => serverNotionHelpers.buildPublicAccessPolicyFromDatabase({
   properties: {
     Published: {
       id: "published-date",
@@ -2461,151 +2481,37 @@ const inferredStatusPublicAccessPolicy = withEnvOverrides({
   },
 }));
 assert.equal(
-  inferredStatusPublicAccessPolicy.propertyName,
-  "Status",
-  "server notion layer should infer the common Status field as the default public visibility field",
-);
-assert.equal(
-  JSON.stringify(inferredStatusPublicAccessPolicy.filter),
-  JSON.stringify({
-    property: "Status",
-    status: { equals: "Published" },
-  }),
-  "server notion layer should default to filtering only published pages when a Status field is present",
-);
-assert.throws(
-  () => withEnvOverrides({
-    NOTION_PUBLIC_PROPERTY_NAME: "Published",
-    NOTION_PUBLIC_PROPERTY_NAMES: null,
-    NOTION_PUBLIC_STATUS_VALUES: null,
-    NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: null,
-  }, () => serverNotionHelpers.buildPublicAccessPolicyFromDatabase({
-    properties: {
-      Published: {
-        id: "published-date",
-        name: "Published",
-        type: "date",
-      },
-      Status: {
-        id: "status",
-        name: "Status",
-        type: "status",
-        status: {
-          options: [
-            { id: "draft", name: "Draft" },
-            { id: "published", name: "Published" },
-          ],
-        },
-      },
-    },
-  })),
-  /Unsupported public visibility property type "date"/,
-  "server notion layer should keep explicit public property configuration strict for unsupported property types",
-);
-assert.throws(
-  () => withEnvOverrides({
-    NOTION_PUBLIC_PROPERTY_NAME: null,
-    NOTION_PUBLIC_PROPERTY_NAMES: null,
-    NOTION_PUBLIC_STATUS_VALUES: null,
-    NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: null,
-  }, () => serverNotionHelpers.buildPublicAccessPolicyFromDatabase({
-    properties: {
-      Workflow: {
-        id: "workflow",
-        name: "Workflow",
-        type: "status",
-        status: {
-          options: [
-            { id: "draft", name: "Draft" },
-            { id: "published", name: "Published" },
-          ],
-        },
-      },
-    },
-  })),
-  /Notion public visibility property is not configured/,
-  "server notion layer should fail closed when no public visibility field is configured",
-);
-const databaseWidePublicAccessPolicy = withEnvOverrides({
-  NOTION_PUBLIC_PROPERTY_NAME: null,
-  NOTION_PUBLIC_PROPERTY_NAMES: null,
-  NOTION_PUBLIC_STATUS_VALUES: null,
-  NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
-}, () => serverNotionHelpers.buildPublicAccessPolicyFromDatabase({
-  properties: {
-    Workflow: {
-      id: "workflow",
-      name: "Workflow",
-      type: "status",
-    },
-  },
-}));
-assert.equal(
-  databaseWidePublicAccessPolicy.propertyType,
+  databaseWideDefaultPublicAccessPolicy.propertyType,
   "database",
-  "server notion layer should require an explicit opt-in before exposing the whole configured database",
+  "server notion layer should default to database-wide public mode when no public visibility field is explicitly configured",
 );
 assert.equal(
-  databaseWidePublicAccessPolicy.filter,
+  databaseWideDefaultPublicAccessPolicy.filter,
   null,
-  "explicit database-wide public mode should not emit an additional Notion filter",
+  "database-wide public mode should not emit a Notion visibility filter",
 );
-const explicitPublicAccessPolicy = withEnvOverrides({
-  NOTION_PUBLIC_PROPERTY_NAME: "Workflow",
-  NOTION_PUBLIC_PROPERTY_NAMES: null,
-  NOTION_PUBLIC_STATUS_VALUES: null,
+const databaseWideWithIgnoredPublicEnvPolicy = withEnvOverrides({
+  NOTION_PUBLIC_PROPERTY_NAME: "MissingPublicFlag",
+  NOTION_PUBLIC_PROPERTY_NAMES: "Status,Public,发布状态",
+  NOTION_PUBLIC_STATUS_VALUES: "Published,Public,Live",
 }, () => serverNotionHelpers.buildPublicAccessPolicyFromDatabase({
   properties: {
     Workflow: {
       id: "workflow",
       name: "Workflow",
       type: "status",
-      status: {
-        options: [
-          { id: "draft", name: "Draft" },
-          { id: "published", name: "Published" },
-        ],
-      },
     },
   },
 }));
 assert.equal(
-  explicitPublicAccessPolicy.propertyName,
-  "Workflow",
-  "server notion layer should still honor an explicitly configured public visibility field",
+  databaseWideWithIgnoredPublicEnvPolicy.propertyType,
+  "database",
+  "server notion layer should keep exposing the configured database even if legacy public env vars are set",
 );
 assert.equal(
-  explicitPublicAccessPolicy.propertyType,
-  "status",
-  "server notion layer should preserve the explicit public property type for downstream filtering",
-);
-const groupedStatusPublicAccessPolicy = withEnvOverrides({
-  NOTION_PUBLIC_PROPERTY_NAME: "Status",
-  NOTION_PUBLIC_PROPERTY_NAMES: null,
-  NOTION_PUBLIC_STATUS_VALUES: null,
-}, () => serverNotionHelpers.buildPublicAccessPolicyFromDatabase({
-  properties: {
-    Status: {
-      id: "status",
-      name: "Status",
-      type: "status",
-      status: {
-        options: [
-          { id: "draft", name: "Draft" },
-          { id: "done", name: "Done" },
-        ],
-        groups: [
-          { id: "todo", name: "To-do", option_ids: ["draft"] },
-          { id: "complete", name: "Complete", option_ids: ["done"] },
-        ],
-      },
-    },
-  },
-}));
-assert.equal(
-  JSON.stringify(groupedStatusPublicAccessPolicy.allowedStatusValues),
-  JSON.stringify(["Done"]),
-  "server notion layer should infer public status values from the matched property schema when the workflow uses Done-style completion states",
+  databaseWideWithIgnoredPublicEnvPolicy.filter,
+  null,
+  "database-wide public mode should ignore legacy public env vars and avoid Notion visibility filters",
 );
 assert.equal(
   serverNotionHelpers.filterPostsBySearch([
@@ -2614,6 +2520,20 @@ assert.equal(
   ], "script").length,
   1,
   "local post search should preserve substring matches for tag text",
+);
+const boundedPostQueryFilters = serverNotionHelpers.normalizePostQueryFilters({
+  category: ` ${"c".repeat(180)} `,
+  search: ` ${"s".repeat(320)} `,
+});
+assert.equal(
+  boundedPostQueryFilters.category.length,
+  128,
+  "server notion layer should cap category query input length before caching and filtering",
+);
+assert.equal(
+  boundedPostQueryFilters.search.length,
+  256,
+  "server notion layer should cap search query input length before caching and filtering",
 );
 const builtPostPayload = serverNotionHelpers.buildPostPayload(
   {
@@ -2653,7 +2573,6 @@ const queryCacheServerNotion = loadCommonJsModule("server/notion-server.js", [],
       NOTION_TOKEN: "test-token",
       NOTION_DATABASE_ID: "query-cache-database",
       SITE_URL: "https://example.com",
-      NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
       PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS: "120000",
     },
   },
@@ -2812,7 +2731,6 @@ const dedupedServerNotion = loadCommonJsModule("server/notion-server.js", [], {
       NOTION_TOKEN: "test-token",
       NOTION_DATABASE_ID: "test-database",
       SITE_URL: "https://example.com",
-      NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
     },
   },
   fetch: async (url) => {
@@ -2901,7 +2819,6 @@ const encodedPathServerNotion = loadCommonJsModule("server/notion-server.js", []
       NOTION_TOKEN: "test-token",
       NOTION_DATABASE_ID: "encoded/database",
       SITE_URL: "https://example.com",
-      NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
     },
   },
   fetch: async (url) => {
@@ -2969,7 +2886,6 @@ const retryServerNotion = loadCommonJsModule("server/notion-server.js", [], {
       NOTION_TOKEN: "test-token",
       NOTION_DATABASE_ID: "retry-database",
       SITE_URL: "https://example.com",
-      NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
     },
   },
   fetch: async (url) => {
@@ -3073,7 +2989,6 @@ const invalidPostCacheServerNotion = loadCommonJsModule("server/notion-server.js
       NOTION_DATABASE_ID: "ttl-post-database",
       PUBLIC_POST_CACHE_TTL_MS: "not-a-number",
       SITE_URL: "https://example.com",
-      NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
     },
   },
   fetch: async (url) => {
@@ -3143,7 +3058,6 @@ const invalidMetadataServerNotion = loadCommonJsModule("server/notion-server.js"
       NOTION_DATABASE_ID: "ttl-metadata-database",
       DATABASE_METADATA_TTL_MS: "not-a-number",
       SITE_URL: "https://example.com",
-      NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS: "true",
     },
   },
   fetch: async (url) => {

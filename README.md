@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.6.0-00e5ff?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-2.7.0-00e5ff?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/node-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node" />
   <img src="https://img.shields.io/badge/deploy-Vercel-000?style=flat-square&logo=vercel&logoColor=white" alt="Vercel" />
   <img src="https://img.shields.io/badge/CMS-Notion-000?style=flat-square&logo=notion&logoColor=white" alt="Notion" />
@@ -34,7 +34,7 @@
 
 **Share Everything** 的思路不同：
 
-- ✏️ **在 Notion 里写文章**，发布状态改为「已发布」就上线
+- ✏️ **在 Notion 里写文章**，放进配置好的公开数据库就上线
 - ⚡ **零构建步骤**，没有 React/Vue/Next.js，纯 HTML + CSS + JS
 - 🖥️ **SSR + SPA 混合**，首屏服务端渲染，后续导航丝滑无刷新
 - 🔒 **生产级安全**，CSP nonce、SSRF 防护、XSS 白名单过滤
@@ -193,10 +193,8 @@ PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS=120000
 PUBLIC_POST_CACHE_TTL_MS=60000
 NOTION_REQUEST_TIMEOUT_MS=12000
 NOTION_BLOCK_CHILD_CONCURRENCY=4
-NOTION_PUBLIC_PROPERTY_NAMES=Status,Public,发布状态
-NOTION_PUBLIC_STATUS_VALUES=Published,Public,Live,公开,已发布
-# 仅当整个数据库都可公开时才设为 true
-NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS=false
+# 默认保持 v2.5 行为：整个配置的 Notion 数据库都作为公开内容读取。
+# 请把草稿放到另一个数据库；公开/发布字段会被忽略。
 ```
 
 ### 3. 本地开发
@@ -233,13 +231,13 @@ npm run check
 | 属性 | 类型 | 说明 |
 |------|------|------|
 | Title | Title | 文章标题（必须） |
-| Status | Status / Select / Checkbox | 公开可见性字段；Status / Select 值为 `Published` / `Public` / `Live` / `公开` / `已发布` 中任意一个即视为公开，Checkbox 为勾选即公开 |
+| Status | Status / Select / Checkbox | 可选，仅作为 Notion 内部管理字段；站点不会用它过滤文章 |
 | Category | Select | 文章分类（可选） |
 | Tags | Multi-select | 标签（可选） |
 | Excerpt | Rich text | 摘要（可选，自动从属性名推断） |
 | Cover | Files & Media | 封面图（可选，也支持 Notion 页面封面） |
 
-> **提示**：系统会自动检测 `Status` / `Public` / `发布状态` 等 checkbox / status / select 公开字段，支持中英文属性名；同名 `Published` 日期字段会被忽略，不会造成歧义。若数据库包含草稿，请确保公开字段存在且已配置；只有整个数据库都可公开时，才设置 `NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS=true`。
+> **公开策略**：本项目长期保持 v2.5 行为：默认读取并展示整个 `NOTION_DATABASE_ID` 指向的 Notion 数据库，不要求公开/发布字段，也不会根据这些字段过滤。请只把可公开内容放进这个数据库；草稿建议放到单独的 Notion 数据库。
 
 ---
 
@@ -255,9 +253,6 @@ npm run check
 | `PUBLIC_POST_CACHE_TTL_MS` | ❌ | `60000` | 单篇文章缓存时间 (ms) |
 | `NOTION_REQUEST_TIMEOUT_MS` | ❌ | `12000` | Notion API 超时 (ms) |
 | `NOTION_BLOCK_CHILD_CONCURRENCY` | ❌ | `4` | 块子元素并发获取数 |
-| `NOTION_PUBLIC_PROPERTY_NAME(S)` | ❌ | 自动识别 `Status` / `Public` 等 checkbox / status / select 字段 | 公开可见性字段名；显式配置时会严格校验类型 |
-| `NOTION_PUBLIC_STATUS_VALUES` | ❌ | 先匹配 `Published`, `Public`, `Live`, `公开`, `已发布`；未命中时再尝试 `Done`, `Complete`, `Visible`, `Online`, `完成` 等兜底值 | 允许公开的状态值；显式设置后只按配置值匹配 |
-| `NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS` | ❌ | `false` | 仅当整个数据库都可公开时显式设为 `true` |
 | `EXPOSE_PUBLIC_ERROR_DETAILS` | ❌ | `false` | 是否在 API 响应中暴露详细错误 |
 
 ---

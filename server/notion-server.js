@@ -19,6 +19,8 @@ const MAX_BLOCK_RECURSION_DEPTH = 10;
 const MAX_PAGINATION_ROUNDS = 50;
 const DEFAULT_SITE_ORIGIN = process.env.SITE_URL || "https://www.0000068.xyz";
 const DEFAULT_POST_PAGE_SIZE = 9;
+const PUBLIC_CATEGORY_QUERY_MAX_LENGTH = 128;
+const PUBLIC_SEARCH_QUERY_MAX_LENGTH = 256;
 const DATABASE_METADATA_TTL_MS = normalizeNonNegativeNumber(process.env.DATABASE_METADATA_TTL_MS, 300_000);
 const PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS = normalizeNonNegativeNumber(process.env.PUBLIC_PAGE_SUMMARY_CACHE_TTL_MS, 120_000);
 const PUBLIC_PAGE_QUERY_CACHE_MAX_ENTRIES = 24;
@@ -26,48 +28,6 @@ const PUBLIC_POST_CACHE_TTL_MS = normalizeNonNegativeNumber(process.env.PUBLIC_P
 const PUBLIC_POST_CACHE_MAX_ENTRIES = 20;
 const NOTION_REQUEST_TIMEOUT_MS = normalizePositiveNumber(process.env.NOTION_REQUEST_TIMEOUT_MS, 12_000);
 const NOTION_BLOCK_CHILD_CONCURRENCY = normalizePositiveNumber(process.env.NOTION_BLOCK_CHILD_CONCURRENCY, 4);
-const DEFAULT_PUBLIC_STATUS_VALUES = ["Published", "Public", "Live", "公开", "已发布"];
-const DEFAULT_PUBLIC_STATUS_FALLBACK_VALUES = [
-  ...DEFAULT_PUBLIC_STATUS_VALUES,
-  "Done",
-  "Complete",
-  "Completed",
-  "Finished",
-  "Visible",
-  "Online",
-  "上线",
-  "已上线",
-  "完成",
-  "已完成",
-  "可见",
-];
-const DEFAULT_PUBLIC_STATUS_GROUP_NAMES = [
-  "Complete",
-  "Completed",
-  "Done",
-  "Published",
-  "Public",
-  "Live",
-  "上线",
-  "已上线",
-  "完成",
-  "已完成",
-  "公开",
-  "已发布",
-];
-const DEFAULT_PUBLIC_PROPERTY_CANDIDATES = Object.freeze([
-  "Public",
-  "Published",
-  "Status",
-  "Visibility",
-  "公开",
-  "发布",
-  "发布状态",
-  "状态",
-  "可见",
-  "是否公开",
-]);
-const SUPPORTED_PUBLIC_PROPERTY_TYPES = new Set(["checkbox", "status", "select"]);
 const ALL_CATEGORY = "\u5168\u90e8";
 const CONTENT_PROPERTY_ENV_NAMES = Object.freeze({
   title: ["NOTION_TITLE_PROPERTY_NAMES", "NOTION_TITLE_PROPERTY_NAME"],
@@ -208,14 +168,6 @@ function createNotionRequestError(message, {
   return error;
 }
 
-function createPublicAccessConfigError(message, detail = "") {
-  return createNotionRequestError(message, {
-    status: 500,
-    code: "notion_public_config_error",
-    detail,
-  });
-}
-
 function getNotionResourceType(path) {
   const normalizedPath = String(path || "");
   if (normalizedPath.startsWith("/databases/")) {
@@ -228,10 +180,6 @@ function getNotionResourceType(path) {
     return "block";
   }
   return "";
-}
-
-function getExplicitPublicStatusValues() {
-  return readCsvEnv("NOTION_PUBLIC_STATUS_VALUES", []);
 }
 
 async function requestNotionJson(path, init = {}) {
@@ -333,9 +281,10 @@ function getCachedPublicPageSummaries() {
 }
 
 function buildPublicPageQueryCacheKey(filters = {}) {
+  const normalizedFilters = normalizePostQueryFilters(filters);
   return JSON.stringify({
-    category: typeof filters.category === "string" ? filters.category.trim() : "",
-    search: normalizeSearchText(filters.search),
+    category: normalizedFilters.category,
+    search: normalizeSearchText(normalizedFilters.search),
   });
 }
 
@@ -373,197 +322,6 @@ function cachePublicPageQuery(cacheKey, pages, expiresAt) {
     if (!oldestKey) break;
     publicPageQueryCache.delete(oldestKey);
   }
-}
-
-function findPropertyEntriesByCandidates(properties, candidates) {
-  const entries = Object.values(properties || {});
-  const normalizedCandidates = candidates.map(normalizeName).filter(Boolean);
-  const seenEntries = new Set();
-  const matches = [];
-
-  normalizedCandidates.forEach((candidate) => {
-    entries.forEach((entry) => {
-      const entryName = normalizeName(entry?.name);
-      const entryId = normalizeName(entry?.id);
-      if (candidate !== entryName && candidate !== entryId) {
-        return;
-      }
-
-      const entryKey = normalizeName(entry?.id || entry?.name);
-      if (!entryKey || seenEntries.has(entryKey)) {
-        return;
-      }
-
-      seenEntries.add(entryKey);
-      matches.push({ entry, candidate });
-    });
-  });
-
-  return matches;
-}
-
-function getPropertySchemaOptions(entry) {
-  if (entry?.type === "status") {
-    return Array.isArray(entry?.status?.options) ? entry.status.options : [];
-  }
-
-  if (entry?.type === "select") {
-    return Array.isArray(entry?.select?.options) ? entry.select.options : [];
-  }
-
-  return [];
-}
-
-function isSupportedPublicVisibilityProperty(entry) {
-  return SUPPORTED_PUBLIC_PROPERTY_TYPES.has(entry?.type);
-}
-
-function getPropertySchemaOptionNames(entry) {
-  const seen = new Set();
-
-  return getPropertySchemaOptions(entry)
-    .map((option) => (typeof option?.name === "string" ? option.name.trim() : ""))
-    .filter((name) => {
-      const normalized = normalizeName(name);
-      if (!normalized || seen.has(normalized)) {
-        return false;
-      }
-
-      seen.add(normalized);
-      return true;
-    });
-}
-
-function matchPropertySchemaOptionNames(entry, candidates) {
-  const normalizedCandidates = new Set(candidates.map(normalizeName).filter(Boolean));
-  if (normalizedCandidates.size === 0) {
-    return [];
-  }
-
-  return getPropertySchemaOptionNames(entry)
-    .filter((name) => normalizedCandidates.has(normalizeName(name)));
-}
-
-function getStatusGroupBackedOptionNames(entry, groupCandidates = DEFAULT_PUBLIC_STATUS_GROUP_NAMES) {
-  if (entry?.type !== "status") {
-    return [];
-  }
-
-  const optionNameById = new Map(
-    getPropertySchemaOptions(entry)
-      .map((option) => [
-        normalizeName(option?.id),
-        typeof option?.name === "string" ? option.name.trim() : "",
-      ])
-      .filter(([id, name]) => Boolean(id && name)),
-  );
-  const normalizedGroupCandidates = new Set(groupCandidates.map(normalizeName).filter(Boolean));
-  const groups = Array.isArray(entry?.status?.groups) ? entry.status.groups : [];
-  const matchedGroups = groups.filter((group) => normalizedGroupCandidates.has(normalizeName(group?.name)));
-
-  if (matchedGroups.length !== 1) {
-    return [];
-  }
-
-  const seen = new Set();
-  return (Array.isArray(matchedGroups[0]?.option_ids) ? matchedGroups[0].option_ids : [])
-    .map((optionId) => optionNameById.get(normalizeName(optionId)) || "")
-    .filter((name) => {
-      const normalized = normalizeName(name);
-      if (!normalized || seen.has(normalized)) {
-        return false;
-      }
-
-      seen.add(normalized);
-      return true;
-    });
-}
-
-function resolvePublicStatusValuesForProperty(entry) {
-  if (entry?.type === "checkbox") {
-    return [];
-  }
-
-  if (!["status", "select"].includes(entry?.type)) {
-    throw createPublicAccessConfigError(
-      `Unsupported public visibility property type "${entry?.type}"`,
-      "Supported types: checkbox, status, select",
-    );
-  }
-
-  const explicitStatusValues = getExplicitPublicStatusValues();
-  const configuredStatusValues = explicitStatusValues.length > 0
-    ? explicitStatusValues
-    : DEFAULT_PUBLIC_STATUS_VALUES;
-  const directMatches = matchPropertySchemaOptionNames(entry, configuredStatusValues);
-  if (directMatches.length > 0) {
-    return directMatches;
-  }
-
-  const schemaOptionNames = getPropertySchemaOptionNames(entry);
-  if (explicitStatusValues.length > 0) {
-    throw createPublicAccessConfigError(
-      `Configured public visibility values do not match "${entry.name}"`,
-      schemaOptionNames.length > 0
-        ? `Set NOTION_PUBLIC_STATUS_VALUES to one of: ${schemaOptionNames.join(", ")}`
-        : `Property "${entry.name}" does not expose selectable status values.`,
-    );
-  }
-
-  const fallbackMatches = matchPropertySchemaOptionNames(entry, DEFAULT_PUBLIC_STATUS_FALLBACK_VALUES);
-  if (fallbackMatches.length > 0) {
-    return fallbackMatches;
-  }
-
-  const groupBackedMatches = getStatusGroupBackedOptionNames(entry);
-  if (groupBackedMatches.length > 0) {
-    return groupBackedMatches;
-  }
-
-  throw createPublicAccessConfigError(
-    `Notion public visibility values are not configured for "${entry.name}"`,
-    schemaOptionNames.length > 0
-      ? `Set NOTION_PUBLIC_STATUS_VALUES to one of: ${schemaOptionNames.join(", ")}`
-      : `Property "${entry.name}" does not expose selectable status values.`,
-  );
-}
-
-function buildMatchAnyPropertyFilter(propertyName, propertyType, allowedValues) {
-  if (propertyType === "checkbox") {
-    return {
-      property: propertyName,
-      checkbox: { equals: true },
-    };
-  }
-
-  const values = allowedValues.map((value) => value.trim()).filter(Boolean);
-  if (values.length === 0) {
-    throw createPublicAccessConfigError(
-      `Public visibility property "${propertyName}" requires at least one allowed status value`,
-    );
-  }
-
-  if (!["status", "select"].includes(propertyType)) {
-    throw createPublicAccessConfigError(
-      `Unsupported public visibility property type "${propertyType}"`,
-      "Supported types: checkbox, status, select",
-    );
-  }
-
-  const operator = propertyType === "status" ? "status" : "select";
-  if (values.length === 1) {
-    return {
-      property: propertyName,
-      [operator]: { equals: values[0] },
-    };
-  }
-
-  return {
-    or: values.map((value) => ({
-      property: propertyName,
-      [operator]: { equals: value },
-    })),
-  };
 }
 
 function combineDatabaseFilters(filters) {
@@ -641,67 +399,8 @@ function buildDatabaseWidePublicAccessPolicy() {
   };
 }
 
-function shouldAllowDatabaseWidePublicAccess() {
-  return process.env.NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS === "true";
-}
-
-function buildPublicAccessPolicyFromDatabase(database) {
-  const explicitPropertyCandidates = readCsvEnv(
-    ["NOTION_PUBLIC_PROPERTY_NAMES", "NOTION_PUBLIC_PROPERTY_NAME"],
-    [],
-  );
-
-  if (explicitPropertyCandidates.length === 0 && shouldAllowDatabaseWidePublicAccess()) {
-    return buildDatabaseWidePublicAccessPolicy();
-  }
-
-  const propertyCandidates = explicitPropertyCandidates.length > 0
-    ? explicitPropertyCandidates
-    : DEFAULT_PUBLIC_PROPERTY_CANDIDATES;
-  const allPropertyMatches = findPropertyEntriesByCandidates(
-    database?.properties,
-    propertyCandidates,
-  );
-  const propertyMatches = explicitPropertyCandidates.length > 0
-    ? allPropertyMatches
-    : allPropertyMatches.filter(({ entry }) => isSupportedPublicVisibilityProperty(entry));
-
-  if (propertyMatches.length > 1) {
-    const matchSummary = propertyMatches
-      .map(({ entry, candidate }) => `${entry.name} (matched by ${candidate})`)
-      .join(", ");
-
-    throw createPublicAccessConfigError(
-      "Ambiguous Notion public visibility property configuration",
-      `Matched multiple properties: ${matchSummary}. Set NOTION_PUBLIC_PROPERTY_NAME to exactly one property.`,
-    );
-  }
-
-  let propertyEntry = propertyMatches[0]?.entry || null;
-
-  if (!propertyEntry?.name || !propertyEntry?.type) {
-    const setupDetail = explicitPropertyCandidates.length > 0
-      ? `Set NOTION_PUBLIC_PROPERTY_NAME(S) to one of: ${propertyCandidates.join(", ")}`
-      : (
-        `Add a checkbox/status/select property named one of: ${propertyCandidates.join(", ")}, ` +
-        "set NOTION_PUBLIC_PROPERTY_NAME(S), or explicitly set " +
-        "NOTION_ALLOW_DATABASE_WIDE_PUBLIC_ACCESS=true for a database that contains only public content."
-      );
-
-    throw createPublicAccessConfigError(
-      "Notion public visibility property is not configured",
-      setupDetail,
-    );
-  }
-
-  const allowedStatusValues = resolvePublicStatusValuesForProperty(propertyEntry);
-
-  return {
-    propertyName: propertyEntry.name,
-    propertyType: propertyEntry.type,
-    allowedStatusValues,
-    filter: buildMatchAnyPropertyFilter(propertyEntry.name, propertyEntry.type, allowedStatusValues),
-  };
+function buildPublicAccessPolicyFromDatabase() {
+  return buildDatabaseWidePublicAccessPolicy();
 }
 
 async function getDatabaseMetadata() {
@@ -816,10 +515,16 @@ function applyPostFilters(posts, { category = "", search = "" } = {}) {
   );
 }
 
+function normalizeBoundedQueryString(value, maxLength) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  const safeMaxLength = Math.max(0, Math.trunc(normalizeNonNegativeNumber(maxLength, 0)));
+  return safeMaxLength > 0 ? trimmed.slice(0, safeMaxLength) : "";
+}
+
 function normalizePostQueryFilters({ category = "", search = "" } = {}) {
   return {
-    category: typeof category === "string" ? category.trim() : "",
-    search: typeof search === "string" ? search.trim() : "",
+    category: normalizeBoundedQueryString(category, PUBLIC_CATEGORY_QUERY_MAX_LENGTH),
+    search: normalizeBoundedQueryString(search, PUBLIC_SEARCH_QUERY_MAX_LENGTH),
   };
 }
 

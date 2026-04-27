@@ -75,10 +75,7 @@ function serializePublicError(error, fallbackError) {
 }
 
 function isPublicContentConfigError(error) {
-  return (
-    error?.code === "notion_config_error" ||
-    error?.code === "notion_public_config_error"
-  );
+  return error?.code === "notion_config_error";
 }
 
 function isUpstreamAuthOrPermissionError(error) {
